@@ -7,6 +7,7 @@ Last updated: 2026-09-03 KST
 - Linux 6.8 USB driver source baseline imported under `usb/`.
 - Initial challenge design recorded in `docs/SPEC.md`.
 - Desktop-notebook Git handoff workflow and safe session scripts added.
+- Session scripts support a repository-local GitHub Desktop Git executable for authenticated sync.
 
 ## In progress
 
@@ -23,4 +24,5 @@ Last updated: 2026-09-03 KST
 
 - Session script syntax: PASS
 - Dirty-tree pull protection: PASS
+- GitHub Desktop authenticated push: PASS
 - Kernel build and hardware tests: NOT TESTED

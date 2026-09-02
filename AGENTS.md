@@ -106,6 +106,15 @@ USB 처리 경로와 CTF용 custom driver를 연결해 재현 가능한 커널 C
 
 ### Session commands
 
+WSL Git에 GitHub 인증이 없고 GitHub Desktop을 사용하는 기기는 최초 한 번 저장소
+로컬 설정에 GitHub Desktop 내장 Git과 Windows 저장소 경로를 등록한다. 값은 기기마다
+다를 수 있으며 `.git/config`에만 저장되어 공유되지 않는다.
+
+```bash
+git config --local kapo.syncGitBin "/path/to/GitHubDesktop/git.exe"
+git config --local kapo.syncWorkTree "C:/path/to/usb-kernel-ctf"
+```
+
 작업을 시작할 때 다음 명령을 사용한다. 작업 트리가 깨끗할 때만 fast-forward pull을
 수행하고 현재 상태와 인계 내용을 출력한다.
 

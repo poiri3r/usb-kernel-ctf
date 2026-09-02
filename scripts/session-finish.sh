@@ -12,6 +12,17 @@ shift
 repo_root=$(git rev-parse --show-toplevel)
 cd "$repo_root"
 
+sync_git_bin=$(git config --local --get kapo.syncGitBin || true)
+sync_work_tree=$(git config --local --get kapo.syncWorkTree || true)
+
+run_sync_git() {
+	if [[ -n $sync_git_bin ]]; then
+		"$sync_git_bin" -C "$sync_work_tree" "$@"
+	else
+		git "$@"
+	fi
+}
+
 git symbolic-ref --quiet HEAD >/dev/null || {
 	printf '%s\n' 'ERROR: detached HEAD; refusing to commit.' >&2
 	exit 1
@@ -34,4 +45,4 @@ fi
 
 git diff --cached --stat
 git commit -m "$commit_message"
-git push
+run_sync_git push
