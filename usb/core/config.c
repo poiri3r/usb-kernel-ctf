@@ -884,6 +884,7 @@ int usb_get_configuration(struct usb_device *dev)
 	unsigned char *bigbuffer;
 	struct usb_config_descriptor *desc;
 	int result;
+	int received;
 
 	if (ncfg > USB_MAXCONFIG) {
 		dev_notice(ddev, "too many configurations: %d, "
@@ -955,20 +956,27 @@ int usb_get_configuration(struct usb_device *dev)
 			kfree(bigbuffer);
 			goto err;
 		}
-		if (result < length) {
+		received = result;
+		if (received < length) {
 			dev_notice(ddev, "config index %d descriptor too short "
 			    "(expected %i, got %i)\n", cfgno, length, result);
-			length = result;
 		}
 
 		dev->rawdescriptors[cfgno] = bigbuffer;
 
 		result = usb_parse_configuration(dev, cfgno,
-		    &dev->config[cfgno], bigbuffer, length);
+		    &dev->config[cfgno], bigbuffer, received);
 		if (result < 0) {
 			++cfgno;
 			goto err;
 		}
+
+		/*
+		 * Keep the device-advertised allocation length for raw descriptor
+		 * readers.  The parser above deliberately uses only received bytes,
+		 * so a short response cannot derail enumeration.
+		 */
+		dev->config[cfgno].desc.wTotalLength = cpu_to_le16(length);
 	}
 
 err:

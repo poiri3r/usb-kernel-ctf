@@ -845,7 +845,14 @@ int usb_get_descriptor(struct usb_device *dev, unsigned char type,
 	if (size <= 0)		/* No point in asking for no data */
 		return -EINVAL;
 
-	memset(buf, 0, size);	/* Make sure we parse really received data */
+	/*
+	 * Configuration descriptors are parsed using the transfer's actual
+	 * length in usb_get_configuration().  Avoid clearing their full backing
+	 * allocation so a short descriptor response does not pay for bytes the
+	 * device did not return.
+	 */
+	if (type != USB_DT_CONFIG)
+		memset(buf, 0, size);
 
 	for (i = 0; i < 3; ++i) {
 		/* retry on length 0 or error; some devices are flakey */

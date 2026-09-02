@@ -64,27 +64,57 @@ RP2040으로 제작한 USB 장치를 이용해 취약한 Linux USB 커널 드라
 
 > 아래 내용은 아직 확정된 설계가 아니라 구현 가능성을 검증 중인 가설이다.
 
-### Stage 1 — USB core parser
+### Stage 1 — USB core short-configuration leak
 
-- 후보 취약점: heap OOB read
-- 후보 위치: `usb/core/config.c`
-- 예상 입력: 조작된 configuration descriptor
-- 현재 문제:
-  - 대상 버퍼가 `kzalloc()`으로 초기화됨
-  - 유용한 데이터가 실제로 유출되는지 확인 필요
-  - 취약점 발생 후 enumeration이 계속되는지 확인 필요
+- 구현 후보: short configuration response에 의한 uninitialized heap disclosure
+- 위치: `usb/core/message.c`, `usb/core/config.c`
+- 입력 조건:
+  - 첫 configuration header의 `wTotalLength`는 공격자가 원하는 kmalloc
+    cache 크기를 광고한다.
+  - 두 번째 `GET_DESCRIPTOR(CONFIGURATION)` 응답은 정상 configuration 및
+    interface descriptor까지만 반환하는 short response다.
+- 데이터 흐름:
+  - backing buffer는 광고된 길이로 `kmalloc()` 된다.
+  - parser에는 실제 수신 길이만 전달되어 미수신 tail을 해석하지 않는다.
+  - raw descriptor reader에는 광고 길이가 보존되어 sysfs
+    `.../descriptors` 또는 usbfs read가 미수신 tail을 userspace로 복사한다.
+- 보안상 결과: 동일 kmalloc cache의 잔여 바이트를 유출할 수 있다.
+- 안정성 의도: parser가 tail에 진입하지 않으므로 short response 뒤에도 정상
+  interface가 생성되고 driver matching까지 진행할 수 있어야 한다.
+- 현재 검증 수준:
+  - host-side poisoned-allocation model에서 canonical kernel pointer 유출: PASS
+  - 실제 Linux 6.8 build/KASAN/RP2040 enumeration: NOT TESTED
+- 유효 정보 조건: 반복 heap grooming으로 함수 포인터 또는 direct-map 주소를
+  포함한 동일 크기 객체를 재사용시켜 KASLR slide나 heap 주소를 계산할 수 있어야
+  한다. 단순 nonzero tail만으로 Stage 1 성공을 확정하지 않는다.
+- 우선 grooming 후보: userspace에서 생성/해제 가능한 `pipe_buffer` ring array.
+  각 entry의 `struct page *`와 `anon_pipe_buf_ops`는 각각 direct-map 및 kernel
+  text 기준 주소 후보이며 배열에 반복되어 유출 식별도 비교적 쉽다. 실제 Ubuntu
+  24.04 config의 기본 ring 크기, kmalloc cache 및 구조체 offset은 pahole과 runtime
+  관찰로 다시 확인해야 한다.
 
 ### Stage 2 — Custom driver
 
 - 진입점: `custom_probe()`
-- 매칭 조건: TBD
-- 후보 primitive: TBD
-- Stage 1과 연결하는 방법: TBD
-- 최종 공격 대상: TBD
+- 매칭 조건 후보: vendor-specific interface class `0xff`, subclass `0x42`,
+  protocol `0x01`
+- 우선 검토 primitive: 장치가 제공하는 record count에 대해 pointer table 크기로
+  allocation하지만 bulk endpoint에서는 실제 record 구조체 배열 크기를 수신하는
+  under-allocation heap overflow. 정수 wrap만 노골적으로 삽입하는 것보다 실제
+  driver의 metadata/payload 크기 혼동으로 보이게 한다.
+- Stage 1 연결 후보: Stage 1으로 kernel text 또는 direct-map 기준 주소를 얻고,
+  overflow 전에 live `pipe_buffer` ring array를 같은 cache에 grooming한다.
+- 최종 공격 대상 후보: 인접 `pipe_buffer`의 `page`, `offset`, `len`을 변조해
+  page-oriented read/write primitive로 발전시킨다. 함수 포인터를 직접 가짜
+  userspace vtable로 바꾸는 방식은 SMEP 때문에 우선순위가 낮다.
+- 상태: Hypothesis. allocation cache, target lifetime, 외부 trigger, SMEP/SMAP
+  대응을 실제 kernel에서 검증하기 전에는 확정하지 않는다.
 
 ## 7. 검증할 가설
 
-- [ ] descriptor 길이 조작으로 OOB read가 발생한다.
+- [x] host model에서 short response의 미초기화 tail이 raw descriptor 출력으로
+  전달된다.
+- [ ] 실제 Linux 6.8에서 동일 cache grooming 후 유효 kernel pointer가 유출된다.
 - [ ] OOB 영역에 유용한 kernel pointer를 배치할 수 있다.
 - [ ] 읽은 데이터를 외부에서 관찰할 수 있다.
 - [ ] Stage 1 이후에도 USB enumeration이 완료된다.
