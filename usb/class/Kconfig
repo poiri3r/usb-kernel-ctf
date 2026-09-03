@@ -47,3 +47,9 @@ config USB_TMC
 
 	  To compile this driver as a module, choose M here: the
 	  module will be called usbtmc.
+
+config USB_KAPO_CTF
+	tristate "KAPO USB kernel CTF driver"
+	help
+	  Driver for the vendor-specific interface used by the KAPO USB kernel
+	  CTF challenge.

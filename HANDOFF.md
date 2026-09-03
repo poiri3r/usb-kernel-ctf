@@ -5,7 +5,7 @@ Updated: 2026-09-03 KST
 From: Codex on desktop
 
 Branch: `main`
-Base commit: `777d259`
+Base commit: `e35208f`
 
 ## Current state
 
@@ -18,17 +18,27 @@ Base commit: `777d259`
   pointer and verifies it appears only in the userspace export, not parser input.
 - `usb/class/customdriver.c` is intentionally empty.
 - Modified USB core objects compile against the local Linux 6.8 source.
-- No booted-kernel, KASAN, or RP2040 test has been performed.
+- QEMU Linux 6.8.12 boots with KASAN and `slub_debug=FZ`. A Raw Gadget on
+  `dummy_hcd` advertises 1024 configuration bytes, returns 18, and still creates
+  vendor interface `ff/42/01`.
+- Sysfs exports 1042 bytes (18-byte device descriptor plus 1024-byte
+  configuration). Pipe-ring grooming exposes a canonical direct-map
+  `struct page *` candidate at configuration offset `0x200` in five of five
+  reconnects.
+- Closing the groom pipes clears each released buffer's `ops`, so this lifetime
+  does not preserve `anon_pipe_buf_ops`. Only the page-pointer candidate is
+  runtime-confirmed.
+- No RP2040 test has been performed.
+- The built-in `kapo_ctf` driver matches `ff/42/01`. QEMU logs
+  `KAPO CTF interface reached probe`, and sysfs links the interface to
+  `/sys/bus/usb/drivers/kapo_ctf`.
 
 ## Next action
 
-Build and boot a Linux 6.8 kernel containing the modified USB core.  Enable
-KASAN and SLUB debugging, groom the configuration buffer's kmalloc cache with a
-known-pointer object, and use an RP2040 configuration descriptor whose
-`wTotalLength` selects that cache while its second response ends after a valid
-vendor interface.  Read `/sys/bus/usb/devices/<device>/descriptors`, confirm the
-pointer is useful for a KASLR or direct-map calculation, and confirm the custom
-driver's `probe()` is reached.
+Repeat the validated 18/1024-byte response and `probe()` path on RP2040
+hardware. In parallel, define the smallest Stage 2 bulk protocol and verify its
+allocation size against a live kmalloc-1k pipe ring before adding the intended
+under-allocation.
 
 After Stage 1 runtime validation, prototype Stage 2 as a record count/size
 under-allocation heap overflow driven by a bulk response: allocate a pointer
@@ -44,6 +54,10 @@ trigger.
 - `usb/core/config.c`: parse the received length but preserve the advertised
   allocation length for raw descriptor readers.
 - `scripts/test-stage1-leak.py`: source contract and poisoned-tail leak model.
+- `scripts/raw-gadget-short-config.c`: Raw Gadget short-response trigger with
+  kmalloc-1k pipe-ring grooming.
+- `usb/class/customdriver.c`, `usb/class/Kconfig`, `usb/class/Makefile`: minimal
+  `ff/42/01` driver registration and observable probe/disconnect skeleton.
 - `docs/SPEC.md`: Stage 1 data flow, validation state, and Stage 2 hypothesis.
 - `STATUS.md`, `HANDOFF.md`: progress and reproducible next action.
 
@@ -53,6 +67,11 @@ trigger.
 - `git diff --check`: PASS
 - Linux 6.8 object build using a temporary hard-linked source tree:
   `make ... drivers/usb/core/config.o drivers/usb/core/message.o`: PASS
+- Linux 6.8.12 KASAN kernel `bzImage` build and QEMU TCG boot: PASS
+- Raw Gadget short configuration enumeration and 1042-byte sysfs read: PASS
+- Five repeated groom/reconnect runs with a canonical direct-map page pointer
+  at configuration offset `0x200`: PASS
+- Built-in `customdriver.o`, interface binding, and `custom_probe()` log: PASS
 - Initial build attempts: FAIL until missing `flex`, `bison`, and libelf
   development files were unpacked into `/tmp`; no system packages were changed.
 

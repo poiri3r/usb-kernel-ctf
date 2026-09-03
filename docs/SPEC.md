@@ -83,7 +83,9 @@ RP2040으로 제작한 USB 장치를 이용해 취약한 Linux USB 커널 드라
   interface가 생성되고 driver matching까지 진행할 수 있어야 한다.
 - 현재 검증 수준:
   - host-side poisoned-allocation model에서 canonical kernel pointer 유출: PASS
-  - 실제 Linux 6.8 build/KASAN/RP2040 enumeration: NOT TESTED
+  - QEMU Linux 6.8.12, KASAN, `slub_debug=FZ`, `dummy_hcd`와 Raw Gadget에서
+    short response 뒤 enumeration 및 sysfs disclosure: PASS
+  - RP2040 enumeration: NOT TESTED
 - 유효 정보 조건: 반복 heap grooming으로 함수 포인터 또는 direct-map 주소를
   포함한 동일 크기 객체를 재사용시켜 KASLR slide나 heap 주소를 계산할 수 있어야
   한다. 단순 nonzero tail만으로 Stage 1 성공을 확정하지 않는다.
@@ -114,11 +116,16 @@ RP2040으로 제작한 USB 장치를 이용해 취약한 Linux USB 커널 드라
 
 - [x] host model에서 short response의 미초기화 tail이 raw descriptor 출력으로
   전달된다.
-- [ ] 실제 Linux 6.8에서 동일 cache grooming 후 유효 kernel pointer가 유출된다.
-- [ ] OOB 영역에 유용한 kernel pointer를 배치할 수 있다.
-- [ ] 읽은 데이터를 외부에서 관찰할 수 있다.
-- [ ] Stage 1 이후에도 USB enumeration이 완료된다.
-- [ ] custom driver의 `probe()`가 실행된다.
+- [x] QEMU Linux 6.8.12에서 kmalloc-1k `pipe_buffer` ring grooming 후
+  canonical direct-map `struct page *` 후보가 5/5회 유출된다.
+- [x] 해제된 pipe ring의 offset `0x200`에 유효한 `struct page *` 후보를
+  반복 배치할 수 있다. 해제 과정에서 `ops`는 NULL이 되므로 같은 방법으로
+  `anon_pipe_buf_ops`는 유출되지 않는다.
+- [x] sysfs `descriptors`에서 광고 길이 1024바이트의 configuration tail을
+  외부에서 읽을 수 있다.
+- [x] QEMU `dummy_hcd`에서 Stage 1 이후 vendor interface가 생성된다.
+- [x] QEMU Raw Gadget의 `ff/42/01` interface가 `kapo_ctf` driver에 매칭되어
+  `custom_probe()`가 실행된다.
 - [ ] Stage 1에서 얻은 정보나 상태를 Stage 2에서 이용할 수 있다.
 - [ ] 두 primitive로 안정적인 권한 상승이 가능하다.
 
