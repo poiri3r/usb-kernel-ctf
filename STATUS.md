@@ -1,74 +1,73 @@
-# Project Status
+# 프로젝트 진행 상태
 
-Last updated: 2026-09-04 KST
+최종 갱신: 2026-09-04 KST
 
-## Done
+## 완료
 
-- Linux 6.8 USB driver source baseline imported under `usb/`.
-- Initial challenge design recorded in `docs/SPEC.md`.
-- Desktop-notebook Git handoff workflow and safe session scripts added.
-- Session scripts support a repository-local GitHub Desktop Git executable for authenticated sync.
-- Stage 1 short-configuration heap disclosure implemented in
-  `usb/core/message.c` and `usb/core/config.c`.
-- A host regression model verifies that parsing remains bounded by the received
-  length while the raw descriptor export contains a groomed canonical pointer.
-- A QEMU Linux 6.8.12 guest with KASAN, SLUB debugging, `dummy_hcd`, and Raw
-  Gadget reproduces the short configuration disclosure. The advertised
-  1024-byte accounted allocation reuses a freed default pipe ring and discloses
-  residual vmemmap `struct page *` values through sysfs in five of five runs
-  while enumeration reaches the vendor interface.
-- A separate 32-byte `seq_operations` grooming mode discloses the upper seven
-  bytes of `proc_single_show` in five of five runs; its known symbol offset
-  supplies the overwritten low byte for KASLR-slide calculation.
-- The minimal `kapo_ctf` driver binds interface `ff/42/01`; QEMU runtime logs
-  confirm `custom_probe()` executes after the Stage 1 short response.
-- Stage 2 exposes `/dev/kapo_ctf0`. Its ioctl reads record count 128, allocates
-  a 1024-byte pointer table, and receives a 2048-byte record array. QEMU reports
-  the intended write as both KASAN slab-out-of-bounds and SLUB redzone damage.
-- A redzone-free QEMU trace confirms a freed live-pipe spray slot at
-  `ffff8880041fc800` is reused by the Stage 2 allocation. Its 2048-byte receive
-  crosses into the still-live ring at `ffff8880041fcc00`.
+- Linux 6.8 USB 드라이버 소스 기준본을 `usb/` 아래에 가져왔다.
+- 초기 문제 설계를 `docs/SPEC.md`에 기록했다.
+- 데스크톱-노트북 Git 인계 절차와 안전한 세션 스크립트를 추가했다.
+- 세션 스크립트가 저장소별 GitHub Desktop Git 실행 파일을 사용해 인증된 동기화를
+  수행할 수 있다.
+- Stage 1 short-configuration heap disclosure를 `usb/core/message.c`와
+  `usb/core/config.c`에 구현했다.
+- host 회귀 모델로 parser가 실제 수신 길이 안에서만 동작하고, raw descriptor
+  출력에는 grooming된 canonical pointer가 포함되는 것을 확인했다.
+- KASAN, SLUB debugging, `dummy_hcd`, Raw Gadget을 포함한 QEMU Linux 6.8.12
+  guest에서 short configuration disclosure를 재현했다. 광고된 1024-byte accounted
+  allocation이 해제된 기본 pipe ring을 재사용하며, enumeration이 vendor interface까지
+  진행되는 동안 잔여 vmemmap `struct page *` 값이 sysfs로 유출됐다. 5/5회 확인했다.
+- 별도의 32-byte `seq_operations` grooming mode에서 `proc_single_show`의 상위
+  7바이트가 유출됐다. 알려진 symbol offset으로 덮인 하위 1바이트를 복원해 KASLR
+  slide를 계산할 수 있다. 5/5회 확인했다.
+- 최소 `kapo_ctf` driver가 interface `ff/42/01`에 bind된다. Stage 1 short response
+  이후 `custom_probe()`가 실행되는 것을 QEMU runtime log로 확인했다.
+- Stage 2는 `/dev/kapo_ctf0`을 노출한다. ioctl은 record count 128을 읽고 1024-byte
+  pointer table을 할당한 뒤 2048-byte record array를 수신한다. QEMU에서 의도한
+  write가 KASAN slab-out-of-bounds와 SLUB redzone 손상으로 각각 검출됐다.
+- redzone 없는 QEMU trace에서 해제한 live-pipe spray slot
+  `ffff8880041fc800`을 Stage 2 allocation이 정확히 재사용했다. 2048-byte receive가
+  다음 live ring `ffff8880041fcc00`까지 넘어가는 것을 확인했다.
 
-## In progress
+## 진행 중
 
-- Stage 2 page-oriented pipe primitive validation.
-- Real Linux 6.8 runtime and RP2040 validation of the Stage 1 leak.
+- Stage 2 page-oriented pipe primitive 검증.
+- 실제 Linux 6.8 환경과 RP2040을 이용한 Stage 1 leak 검증.
 
-## Next
+## 다음 작업
 
-1. Verify physical RP2040 enumeration and `probe()` continue after the short
-   configuration response.
-2. Replace the fixed Raw Gadget payload with controlled pipe metadata and test
-   a bounded page-oriented pipe read/write primitive.
+1. 실제 RP2040에서 short configuration response 이후에도 enumeration과 `probe()`가
+   계속되는지 확인한다.
+2. 고정된 Raw Gadget payload를 조작 가능한 pipe metadata로 교체하고, 범위를 제한한
+   page-oriented pipe read/write primitive를 시험한다.
 
-## Verification
+## 검증 결과
 
-- Session script syntax: PASS
-- Dirty-tree pull protection: PASS
-- GitHub Desktop authenticated push: PASS
-- Stage 1 host poisoned-allocation model: PASS
-- Linux 6.8 `drivers/usb/core/config.o` and `message.o` build: PASS
-- Stage 1 regression model repeated five times: PASS
-- Changed-diff checkpatch: 0 errors, 0 warnings; one expected camel-case check
-  for the USB-standard `wTotalLength` field
-- First Linux 6.8 build attempt without `flex`: FAIL (missing build tool)
-- Second build setup attempt without usable libelf development files: FAIL
-- QEMU Linux 6.8.12 boot with KASAN and `slub_debug=FZ`: PASS
+- 세션 스크립트 문법: PASS
+- dirty working tree pull 방지: PASS
+- GitHub Desktop 인증 push: PASS
+- Stage 1 host poisoned-allocation 모델: PASS
+- Linux 6.8 `drivers/usb/core/config.o`, `message.o` 빌드: PASS
+- Stage 1 회귀 모델 5회 반복: PASS
+- 변경 diff checkpatch: 오류 0, 경고 0. USB 표준 `wTotalLength` 필드에 대한 예상된
+  camel-case check 1건만 존재
+- `flex` 없이 수행한 첫 Linux 6.8 빌드: FAIL (빌드 도구 누락)
+- 사용 가능한 libelf 개발 파일 없이 수행한 두 번째 빌드 준비: FAIL
+- KASAN 및 `slub_debug=FZ`를 사용한 QEMU Linux 6.8.12 부팅: PASS
 - Raw Gadget 25/1024-byte short configuration enumeration: PASS
-- Sysfs raw descriptor length (18-byte device + 1024-byte configuration): PASS
-- Runtime kmalloc trace showing exact freed pipe-ring address reused by USB: PASS
-- Freed kmalloc-1k pipe-ring vmemmap `struct page *` disclosure, five times: PASS
-- Freed 32-byte `seq_operations` upper-seven-byte `proc_single_show`
-  disclosure, five times: PASS
-- Freed pipe-ring `anon_pipe_buf_ops` disclosure: FAIL (`pipe_buf_release()`
-  clears `ops`; do not use this grooming lifetime for a text pointer)
-- Linux 6.8.12 `customdriver.o` build: PASS
-- Final `customdriver.o` rebuild: initial invocation without the temporary
-  libelf include/library paths FAIL; corrected invocation PASS
-- Raw Gadget interface `ff/42/01` binding and `custom_probe()` execution: PASS
-- RP2040 enumeration and hardware leak test: NOT TESTED
-- Stage 2 device node, vendor count request, and bulk transfer: PASS
-- Stage 2 KASAN 2048-byte write into 1024-byte allocation: PASS
-- Stage 2 SLUB right-redzone overwrite: PASS
-- Stage 2 exact freed-slot reuse and adjacent live-pipe reach: PASS
-- Stage 2 controlled pipe metadata and page primitive: NOT TESTED
+- sysfs raw descriptor 길이(18-byte device + 1024-byte configuration): PASS
+- 해제한 pipe-ring 주소를 USB buffer가 정확히 재사용한 runtime kmalloc trace: PASS
+- 해제한 kmalloc-1k pipe ring의 vmemmap `struct page *` 유출 5회: PASS
+- 해제한 32-byte `seq_operations`의 상위 7-byte `proc_single_show` 유출 5회: PASS
+- 해제한 pipe ring의 `anon_pipe_buf_ops` 유출: FAIL (`pipe_buf_release()`가 `ops`를
+  지우므로 이 grooming lifetime을 text pointer 유출에 사용하지 않는다)
+- Linux 6.8.12 `customdriver.o` 빌드: PASS
+- 최종 `customdriver.o` 재빌드: 임시 libelf include/library 경로 없이 실행한 첫 명령은
+  FAIL, 경로를 지정한 수정 명령은 PASS
+- Raw Gadget interface `ff/42/01` bind 및 `custom_probe()` 실행: PASS
+- RP2040 enumeration 및 hardware leak 시험: NOT TESTED
+- Stage 2 device node, vendor count request, bulk transfer: PASS
+- Stage 2의 1024-byte allocation 대상 2048-byte KASAN write 검출: PASS
+- Stage 2 SLUB right-redzone overwrite 검출: PASS
+- Stage 2의 정확한 freed-slot 재사용 및 인접 live-pipe 도달: PASS
+- Stage 2의 조작된 pipe metadata 및 page primitive: NOT TESTED

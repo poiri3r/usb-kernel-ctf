@@ -54,6 +54,11 @@ USB 처리 경로와 CTF용 custom driver를 연결해 재현 가능한 커널 C
 
 ## Shared progress protocol
 
+- `STATUS.md`의 제목, 설명, 진행 상태와 검증 결과는 한국어로 작성한다. 코드 식별자,
+  명령, 로그 문자열과 `PASS`, `FAIL`, `NOT TESTED` 같은 판정 표시는 원문을 유지할
+  수 있다.
+- `HANDOFF.md`는 정확한 기술 인계를 위해 영어로 작성해도 된다.
+
 의미 있는 작업을 마칠 때 `STATUS.md`를 다음 기준으로 갱신한다.
 
 - 완료된 작업
@@ -77,6 +82,9 @@ USB 처리 경로와 CTF용 custom driver를 연결해 재현 가능한 커널 C
 `HANDOFF.md`에서 충돌이 예상되면 `docs/handoffs/<task-name>.md`를 사용한다.
 
 ## Git workflow
+
+- 새 커밋 메시지는 한국어로 작성한다. 코드 식별자나 subsystem 이름은 필요한 경우
+  원문을 유지할 수 있다.
 
 - 작업 전 현재 브랜치, upstream 상태, staged/unstaged/untracked 파일을 확인한다.
 - 기존 미커밋 변경은 사용자 또는 다른 에이전트의 작업으로 간주해 보존한다.
