@@ -939,7 +939,7 @@ int usb_get_configuration(struct usb_device *dev)
 		    USB_DT_CONFIG_SIZE);
 
 		/* Now that we know the length, get the whole thing */
-		bigbuffer = kmalloc(length, GFP_KERNEL);
+		bigbuffer = kmalloc(length, GFP_KERNEL_ACCOUNT);
 		if (!bigbuffer) {
 			result = -ENOMEM;
 			goto err;

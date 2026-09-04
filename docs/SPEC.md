@@ -74,7 +74,9 @@ RP2040으로 제작한 USB 장치를 이용해 취약한 Linux USB 커널 드라
   - 두 번째 `GET_DESCRIPTOR(CONFIGURATION)` 응답은 정상 configuration 및
     interface descriptor까지만 반환하는 short response다.
 - 데이터 흐름:
-  - backing buffer는 광고된 길이로 `kmalloc()` 된다.
+  - backing buffer는 광고된 길이로 `kmalloc(..., GFP_KERNEL_ACCOUNT)` 된다.
+    이 flag는 userspace pipe ring의 `GFP_KERNEL_ACCOUNT` allocation과 같은
+    kmalloc cache를 선택하기 위한 의도된 challenge 변경이다.
   - parser에는 실제 수신 길이만 전달되어 미수신 tail을 해석하지 않는다.
   - raw descriptor reader에는 광고 길이가 보존되어 sysfs
     `.../descriptors` 또는 usbfs read가 미수신 tail을 userspace로 복사한다.
@@ -86,47 +88,83 @@ RP2040으로 제작한 USB 장치를 이용해 취약한 Linux USB 커널 드라
   - QEMU Linux 6.8.12, KASAN, `slub_debug=FZ`, `dummy_hcd`와 Raw Gadget에서
     short response 뒤 enumeration 및 sysfs disclosure: PASS
   - RP2040 enumeration: NOT TESTED
-- 유효 정보 조건: 반복 heap grooming으로 함수 포인터 또는 direct-map 주소를
+- 유효 정보 조건: 반복 heap grooming으로 함수 포인터 또는 vmemmap 주소를
   포함한 동일 크기 객체를 재사용시켜 KASLR slide나 heap 주소를 계산할 수 있어야
   한다. 단순 nonzero tail만으로 Stage 1 성공을 확정하지 않는다.
-- 우선 grooming 후보: userspace에서 생성/해제 가능한 `pipe_buffer` ring array.
-  각 entry의 `struct page *`와 `anon_pipe_buf_ops`는 각각 direct-map 및 kernel
-  text 기준 주소 후보이며 배열에 반복되어 유출 식별도 비교적 쉽다. 실제 Ubuntu
-  24.04 config의 기본 ring 크기, kmalloc cache 및 구조체 offset은 pahole과 runtime
-  관찰로 다시 확인해야 한다.
+- 확인된 grooming 경로:
+  - 16-entry `pipe_buffer` ring은 x86_64에서 640바이트를 요청해 kmalloc-1k를
+    사용한다. 여러 entry를 page-sized write로 채운 뒤 pipe를 해제하면 entry 1
+    이후의 `struct page *`가 남는다. entry 0은 18-byte USB response가 덮는다.
+  - `/proc/self/stat`의 `single_open()`은 32-byte `seq_operations`를
+    `GFP_KERNEL_ACCOUNT`로 할당한다. 해제 뒤 32바이트 configuration allocation으로
+    재사용하면 마지막 `show` 함수 포인터인 `proc_single_show`의 상위 7바이트가
+    남는다. 하위 1바이트는 알려진 symbol offset으로 복원해 KASLR slide를 계산한다.
+  - pipe 해제 시 `ops`는 NULL이 되므로 freed pipe ring 자체에서는
+    `anon_pipe_buf_ops`를 얻지 못한다.
 
 ### Stage 2 — Custom driver
 
 - 진입점: `custom_probe()`
 - 매칭 조건 후보: vendor-specific interface class `0xff`, subclass `0x42`,
   protocol `0x01`
-- 우선 검토 primitive: 장치가 제공하는 record count에 대해 pointer table 크기로
-  allocation하지만 bulk endpoint에서는 실제 record 구조체 배열 크기를 수신하는
-  under-allocation heap overflow. 정수 wrap만 노골적으로 삽입하는 것보다 실제
-  driver의 metadata/payload 크기 혼동으로 보이게 한다.
-- Stage 1 연결 후보: Stage 1으로 kernel text 또는 direct-map 기준 주소를 얻고,
-  overflow 전에 live `pipe_buffer` ring array를 같은 cache에 grooming한다.
-- 최종 공격 대상 후보: 인접 `pipe_buffer`의 `page`, `offset`, `len`을 변조해
-  page-oriented read/write primitive로 발전시킨다. 함수 포인터를 직접 가짜
-  userspace vtable로 바꾸는 방식은 SMEP 때문에 우선순위가 낮다.
-- 상태: Hypothesis. allocation cache, target lifetime, 외부 trigger, SMEP/SMAP
-  대응을 실제 kernel에서 검증하기 전에는 확정하지 않는다.
+- 제안 protocol:
+  - vendor control request로 little-endian 16-bit `record_count`를 읽는다.
+  - driver는 record pointer table이라고 잘못 해석해
+    `kmalloc_array(record_count, sizeof(void *), GFP_KERNEL_ACCOUNT)`로 할당한다.
+  - bulk IN endpoint에서는 실제 16-byte record 배열이라고 해석해
+    `record_count * sizeof(struct kapo_record)` 바이트를 같은 buffer로 수신한다.
+  - `record_count = 128`이면 allocation request는 1024바이트, receive length는
+    2048바이트다. 기본 16-entry pipe ring의 640-byte request와 같은 kmalloc-1k
+    cache에 들어간다.
+- trigger timing:
+  - `probe()`는 bulk endpoint를 확인하고 userspace device node만 등록한다.
+  - 참가자는 Stage 1 sysfs leak을 읽어 KASLR slide와 vmemmap page pointer를 얻는다.
+  - 참가자가 live pipe rings를 grooming한 뒤 driver ioctl을 호출하면 metadata read,
+    vulnerable allocation, bulk receive가 실행된다. 이 순서로 Stage 1 관찰 이전에
+    Stage 2가 자동 실행되는 문제를 피한다.
+- Stage 1 연결:
+  - leaked `proc_single_show`에서 KASLR slide와 `anon_pipe_buf_ops` 주소를 계산한다.
+  - leaked `struct page *`는 vmemmap에서 page 단위 산술의 기준으로 사용한다.
+  - overflow payload는 인접 live `pipe_buffer`의 `page`, `offset`, `len`, `ops`,
+    `flags`, `private`를 일관된 값으로 재구성한다.
+  - 이후 pipe read/write를 외부 trigger로 사용해 page-oriented primitive를 검증한다.
+- 검증 분리:
+  - KASAN build에서는 1024-byte allocation 경계를 넘는 bulk receive report를 확인한다.
+  - SLUB redzone 때문에 실제 인접 object 도달이 달라질 수 있으므로 adjacency와 pipe
+    primitive는 debug redzone 없는 target-equivalent build에서 별도로 확인한다.
+- 현재 검증 수준:
+  - `record_count = 128`에서 1024-byte kmalloc-1k allocation과 2048-byte bulk
+    receive 발생: PASS
+  - ioctl을 통한 외부 trigger와 2048-byte 반환: PASS
+  - KASAN `slab-out-of-bounds` write report: PASS
+  - SLUB `Right Redzone overwritten` report: PASS
+  - redzone-free single-CPU trace에서 freed pipe ring 주소를 vulnerable allocation이
+    정확히 재사용하고, 바로 높은 주소의 live pipe ring까지 write가 도달: PASS
+  - controlled pipe metadata 및 page-oriented read/write: NOT TESTED
+- 상태: overflow와 live pipe target 도달은 Confirmed. page primitive와 최종 exploit
+  연결은 Hypothesis.
 
 ## 7. 검증할 가설
 
 - [x] host model에서 short response의 미초기화 tail이 raw descriptor 출력으로
   전달된다.
-- [x] QEMU Linux 6.8.12에서 kmalloc-1k `pipe_buffer` ring grooming 후
-  canonical direct-map `struct page *` 후보가 5/5회 유출된다.
-- [x] 해제된 pipe ring의 offset `0x200`에 유효한 `struct page *` 후보를
-  반복 배치할 수 있다. 해제 과정에서 `ops`는 NULL이 되므로 같은 방법으로
-  `anon_pipe_buf_ops`는 유출되지 않는다.
+- [x] QEMU Linux 6.8.12에서 trace로 640-byte pipe ring과 1024-byte USB
+  configuration이 같은 kmalloc-1k cache를 사용하고, USB allocation이 해제된 pipe
+  ring의 정확한 주소를 재사용함을 확인했다.
+- [x] 여러 pipe entries를 채운 뒤 configuration offset `0x28`부터 canonical
+  vmemmap `struct page *` 후보가 유출된다. 5/5회 확인했다.
+- [x] 32-byte `seq_operations` grooming으로 `proc_single_show`의 상위 7바이트가
+  configuration offset `0x19`에 유출된다. 5/5회 확인했다.
 - [x] sysfs `descriptors`에서 광고 길이 1024바이트의 configuration tail을
   외부에서 읽을 수 있다.
 - [x] QEMU `dummy_hcd`에서 Stage 1 이후 vendor interface가 생성된다.
 - [x] QEMU Raw Gadget의 `ff/42/01` interface가 `kapo_ctf` driver에 매칭되어
   `custom_probe()`가 실행된다.
 - [ ] Stage 1에서 얻은 정보나 상태를 Stage 2에서 이용할 수 있다.
+- [x] Stage 2 ioctl이 1024-byte allocation에 2048-byte bulk payload를 기록해
+  KASAN 및 SLUB에서 allocation 경계 초과를 재현한다.
+- [x] redzone-free QEMU trace에서 Stage 2 allocation이 controlled pipe hole의 정확한
+  주소를 재사용하고 인접 live pipe ring까지 도달한다.
 - [ ] 두 primitive로 안정적인 권한 상승이 가능하다.
 
 ## 8. 미정 사항

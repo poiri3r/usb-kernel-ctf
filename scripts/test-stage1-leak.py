@@ -22,6 +22,8 @@ def require_source_contract() -> None:
             "bigbuffer, received);" in config,
         "raw readers retain advertised allocation length":
             "desc.wTotalLength = cpu_to_le16(length);" in config,
+        "configuration buffer shares the accounted pipe-ring cache":
+            "bigbuffer = kmalloc(length, GFP_KERNEL_ACCOUNT);" in config,
     }
     failed = [description for description, ok in required.items() if not ok]
     if failed:
@@ -60,4 +62,4 @@ if __name__ == "__main__":
     model_short_transfer()
     print("PASS: parser uses 18 received bytes and enumeration model remains valid")
     print("PASS: 64-byte descriptor export contains a groomed canonical heap pointer")
-    print("NOTE: host model only; kernel build, KASAN, and RP2040 tests remain required")
+    print("NOTE: this host model does not perform kernel, KASAN, or RP2040 tests")
