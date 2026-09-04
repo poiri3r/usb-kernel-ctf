@@ -1,6 +1,6 @@
 # 프로젝트 진행 상태
 
-최종 갱신: 2026-09-04 KST
+최종 갱신: 2026-09-05 KST
 
 ## 완료
 
@@ -22,24 +22,40 @@
   slide를 계산할 수 있다. 5/5회 확인했다.
 - 최소 `kapo_ctf` driver가 interface `ff/42/01`에 bind된다. Stage 1 short response
   이후 `custom_probe()`가 실행되는 것을 QEMU runtime log로 확인했다.
-- Stage 2는 `/dev/kapo_ctf0`을 노출한다. ioctl은 record count 128을 읽고 1024-byte
-  pointer table을 할당한 뒤 2048-byte record array를 수신한다. QEMU에서 의도한
-  write가 KASAN slab-out-of-bounds와 SLUB redzone 손상으로 각각 검출됐다.
+- Stage 2는 `/dev/kapo_ctf0`을 노출한다. ioctl은 record count 128을 읽고 record
+  포인터 크기를 element 크기로 잘못 사용해 1024-byte buffer를 할당한 뒤 2048-byte
+  record array를 수신한다. QEMU에서 의도한 write가 KASAN slab-out-of-bounds와 SLUB
+  redzone 손상으로 각각 검출됐다.
+- custom driver source의 의도적 취약점 주석과 이중 포인터 단서를 제거하고 평범한 record
+  배열 allocation의 `sizeof` 실수로 표현했다. Linux 6.8.12 KASAN object에서 allocation은
+  `count * 8`, bulk receive는 `count * 16`으로 유지됨을 확인했다. 변경 후 QEMU runtime
+  regression은 아직 실행하지 않았다.
 - redzone 없는 QEMU trace에서 해제한 live-pipe spray slot
   `ffff8880041fc800`을 Stage 2 allocation이 정확히 재사용했다. 2048-byte receive가
   다음 live ring `ffff8880041fcc00`까지 넘어가는 것을 확인했다.
+- 최종 권한 상승 설계는 유출한 SUID helper의 file-backed `struct page *`, KASLR로
+  계산한 `page_cache_pipe_buf_ops`, `PIPE_BUF_FLAG_CAN_MERGE`를 이용한 page-cache
+  overwrite로 선택했다. 이 설계의 runtime 동작은 아직 검증하지 않았다.
+- 참가자 배포 방향은 custom driver built-in과 exact target의 `bzImage`, `vmlinux`,
+  `System.map`, kernel config, Ubuntu 24.04 rootfs 및 RP2040 firmware template 제공으로
+  정리했다. release artifact는 아직 만들지 않았다.
 
 ## 진행 중
 
-- Stage 2 page-oriented pipe primitive 검증.
+- Stage 2의 controlled `pipe_buffer`와 SUID helper page-cache write 검증.
 - 실제 Linux 6.8 환경과 RP2040을 이용한 Stage 1 leak 검증.
+- target kernel/rootfs와 참가자 배포 artifact 확정.
 
 ## 다음 작업
 
-1. 실제 RP2040에서 short configuration response 이후에도 enumeration과 `probe()`가
-   계속되는지 확인한다.
-2. 고정된 Raw Gadget payload를 조작 가능한 pipe metadata로 교체하고, 범위를 제한한
-   page-oriented pipe read/write primitive를 시험한다.
+1. 고정된 Raw Gadget payload를 조작 가능한 pipe metadata로 교체한다.
+2. 작은 SUID helper를 만들고, file-backed page pointer leak과 한 페이지 범위의
+   `PIPE_BUF_FLAG_CAN_MERGE` overwrite를 QEMU에서 검증한다.
+3. 변조된 helper 실행으로 UID 0과 `KAPO{test_flag}` 획득을 연속 10회 시험한다.
+4. 32-byte와 1024-byte short configuration을 한 장치의 두 configuration으로 제공하는
+   단일 enumeration leak을 시험한다.
+5. 실제 RP2040에서 enumeration, `probe()`, 두 leak, Stage 2와 test flag 획득을 검증한다.
+6. 검증된 exact kernel/rootfs로 참가자 배포 bundle을 만든다.
 
 ## 검증 결과
 
@@ -70,4 +86,12 @@
 - Stage 2의 1024-byte allocation 대상 2048-byte KASAN write 검출: PASS
 - Stage 2 SLUB right-redzone overwrite 검출: PASS
 - Stage 2의 정확한 freed-slot 재사용 및 인접 live-pipe 도달: PASS
+- primitive 단서 완화 후 Linux 6.8.12 `customdriver.o` 재빌드: PASS
+- primitive 단서 완화 후 object의 `count * 8` allocation 및 `count * 16` receive: PASS
+- primitive 단서 완화 후 QEMU Stage 2 runtime regression: NOT TESTED
 - Stage 2의 조작된 pipe metadata 및 page primitive: NOT TESTED
+- SUID helper file-backed page pointer leak: NOT TESTED
+- `page_cache_pipe_buf_ops`와 `PIPE_BUF_FLAG_CAN_MERGE` page-cache write: NOT TESTED
+- 변조된 SUID helper를 통한 UID 0 및 test flag 획득: NOT TESTED
+- 두 configuration을 이용한 단일 enumeration leak: NOT TESTED
+- 참가자용 built-in target 및 release bundle: NOT BUILT

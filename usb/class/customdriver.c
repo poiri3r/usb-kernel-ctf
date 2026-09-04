@@ -67,7 +67,7 @@ static long custom_ioctl(struct file *file, unsigned int command,
 			 unsigned long argument)
 {
 	struct kapo_device *device = file->private_data;
-	struct kapo_record **records;
+	struct kapo_record *records;
 	__le16 device_count;
 	unsigned int receive_length;
 	unsigned int count;
@@ -92,11 +92,10 @@ static long custom_ioctl(struct file *file, unsigned int command,
 	if (!count || count > KAPO_MAX_RECORDS)
 		return -EINVAL;
 
-	/* Intentional CTF bug: pointer table size, record-array receive length. */
-	records = kmalloc_array(count, sizeof(*records), GFP_KERNEL_ACCOUNT);
+	records = kmalloc_array(count, sizeof(records), GFP_KERNEL_ACCOUNT);
 	if (!records)
 		return -ENOMEM;
-	receive_length = count * sizeof(struct kapo_record);
+	receive_length = count * sizeof(*records);
 	result = usb_bulk_msg(device->udev, device->bulk_in_pipe, records,
 			      receive_length, &actual_length, 5000);
 	kfree(records);

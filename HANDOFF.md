@@ -1,11 +1,11 @@
 # Handoff
 
-Updated: 2026-09-04 KST
+Updated: 2026-09-05 KST
 
 From: Codex on desktop
 
 Branch: `main`
-Base commit: `c6bfa45`
+Base commit: `90ff347`
 
 ## Current state
 
@@ -38,38 +38,43 @@ Base commit: `c6bfa45`
 - The built-in `kapo_ctf` driver matches `ff/42/01`. QEMU logs
   `KAPO CTF interface ready at minor 192`, creates `/dev/kapo_ctf0`, and binds
   the interface to `/sys/bus/usb/drivers/kapo_ctf`.
-- Stage 2 ioctl asks the device for count 128, allocates a 1024-byte pointer
-  table, and receives a 2048-byte record array. KASAN reports a 2048-byte
-  slab-out-of-bounds write; a non-KASAN `slub_debug=FZ` boot reports the right
-  redzone overwritten.
+- Stage 2 ioctl asks the device for count 128, allocates a 1024-byte buffer by
+  using the record pointer size instead of the record element size, and receives
+  a 2048-byte record array. The source now presents this as an ordinary
+  single-pointer `sizeof` mistake and no longer labels the intentional bug.
+  KASAN previously reported a 2048-byte slab-out-of-bounds write; a non-KASAN
+  `slub_debug=FZ` boot previously reported the right redzone overwritten.
 - In a redzone-free single-CPU boot, a 64-ring live-pipe spray freed address
   `ffff8880041fc800`; the vulnerable allocation reused that exact address. The
   next still-live ring was at `ffff8880041fcc00`, so the 2048-byte receive
   reaches it after crossing the 1024-byte vulnerable object.
+- The selected final escalation design is a Dirty Pipe-style page-cache write
+  against a dedicated root-owned SUID helper. Reconstruct the adjacent live
+  `pipe_buffer` with a leaked helper-page `struct page *`, the KASLR-adjusted
+  `page_cache_pipe_buf_ops`, and `PIPE_BUF_FLAG_CAN_MERGE`. This design is
+  selected but NOT TESTED.
+- The planned participant build keeps `kapo_ctf` built into the kernel. The
+  public bundle should contain the exact `bzImage`, symbolized non-DWARF
+  `vmlinux`, `System.map`, kernel config, Ubuntu 24.04 rootfs, helper copy,
+  QEMU launcher, RP2040 firmware template, and hashes. Do not publish a
+  standalone `customdriver.ko`.
 
 ## Next action
 
-Make the Raw Gadget Stage 2 payload controllable, reconstruct one adjacent
-`pipe_buffer` entry using the Stage 1 KASLR/vmemmap information, and test a
-bounded page-oriented pipe operation. Keep final privilege escalation a
-hypothesis until the read/write behavior is externally observed and repeatable.
+Change `scripts/raw-gadget-short-config.c` so its Stage 2 bulk response can read
+exactly 2048 payload bytes from a file named on the command line instead of
+always filling the response with `A`. Preserve the current default mode and
+verify that `scripts/trigger-stage2.c` still returns 2048. Do not start the SUID
+helper until this controllable-payload step passes.
 
 ## Changed files
 
-- `usb/core/message.c`: leave configuration backing allocations uncleared.
-- `usb/core/config.c`: parse the received length but preserve the advertised
-  allocation length for raw descriptor readers.
-- `scripts/test-stage1-leak.py`: source contract and poisoned-tail leak model.
-- `scripts/raw-gadget-short-config.c`: Raw Gadget short-response trigger with
-  kmalloc-1k pipe-ring grooming.
-- `usb/class/customdriver.c`, `usb/class/Kconfig`, `usb/class/Makefile`:
-  `ff/42/01` driver, device node, ioctl trigger, and intended record-size
-  under-allocation.
-- `scripts/trigger-stage2.c`: minimal userspace ioctl trigger.
-- `scripts/test-stage2-adjacency.c`: live-pipe spray and controlled-hole trace
-  harness.
-- `docs/SPEC.md`: Stage 1 data flow, validation state, and Stage 2 hypothesis.
-- `STATUS.md`, `HANDOFF.md`: progress and reproducible next action.
+- `usb/class/customdriver.c`: hide the Stage 2 source-level giveaway behind a
+  single-pointer `sizeof` mistake while preserving the x86_64 1:2 size mismatch.
+- `docs/SPEC.md`: record the concealed Stage 2 expression, selected SUID-helper
+  page-cache design, distribution plan, and current validation boundary.
+- `STATUS.md`: update progress, validation results, and remaining work.
+- `HANDOFF.md`: record this task and the next reproducible action.
 
 ## Verification commands
 
@@ -87,13 +92,22 @@ hypothesis until the read/write behavior is externally observed and repeatable.
 - Built-in `customdriver.o`, interface binding, and `custom_probe()` log: PASS
 - Final `customdriver.o` rebuild with temporary libelf include/library paths:
   PASS (the immediately preceding invocation without those paths failed)
+- Post-concealment `customdriver.o` rebuild: PASS. Disassembly shows allocation
+  length `count << 3` and bulk receive length `count << 4`.
+- Post-concealment QEMU Stage 2 runtime regression: NOT TESTED.
 - Stage 2 KASAN slab-out-of-bounds and SLUB redzone reports: PASS
 - Stage 2 exact freed-slot reuse and adjacent live-pipe reach: PASS
+- SUID-helper page leak, controlled page-cache write, UID 0, test flag, and dual
+  configuration enumeration: NOT TESTED
+- Participant release bundle: NOT BUILT
 - Initial build attempts: FAIL until missing `flex`, `bison`, and libelf
   development files were unpacked into `/tmp`; no system packages were changed.
 
 ## Notes
 
 - Stage 1 pointer leaks and Stage 2 live-object reach are reproduced in QEMU;
-  the controlled page primitive and final exploit remain hypotheses.
+  the SUID-helper page-cache primitive and final exploit remain hypotheses.
+- A dual-configuration device (32-byte seq leak plus 1024-byte helper-page leak)
+  may remove an extra reconnect, but this is an Unverified optimization. Keep
+  the existing separate modes until it passes QEMU and RP2040 tests.
 - Do not commit the real flag, VM images, credentials, or build artifacts.
