@@ -36,6 +36,13 @@
 - redzone 없는 QEMU trace에서 해제한 live-pipe spray slot
   `ffff8880041fc800`을 Stage 2 allocation이 정확히 재사용했다. 2048-byte receive가
   다음 live ring `ffff8880041fcc00`까지 넘어가는 것을 확인했다.
+- target-equivalent Linux 6.8.12 build header를 해당 build의 generated configuration과
+  함께 컴파일해 `struct pipe_buffer`의 40-byte 크기와 `page=0`, `offset=8`, `len=12`,
+  `ops=16`, `flags=24`, `private=32` byte offset을 산출했다.
+- `scripts/make-stage2-pipe-payload.c`는 첫 1024 bytes를 zero로 보존하고 byte 1024의
+  인접 `pipe_buffer` entry 하나에 runtime 입력 `page`, `ops`, `offset`, 고정 `len=1`,
+  `PIPE_BUF_FLAG_CAN_MERGE`, `private=0`을 little-endian으로 pack한 정확히 2048-byte
+  payload를 새 파일로 생성한다. generator 자체 검사는 prefix, field, tail을 확인한다.
 - 최종 권한 상승 설계는 유출한 SUID helper의 file-backed `struct page *`, KASLR로
   계산한 `page_cache_pipe_buf_ops`, `PIPE_BUF_FLAG_CAN_MERGE`를 이용한 page-cache
   overwrite로 선택했다. 이 설계의 runtime 동작은 아직 검증하지 않았다.
@@ -51,14 +58,13 @@
 
 ## 다음 작업
 
-1. 조작 가능한 Raw Gadget payload로 보낼 pipe metadata layout을 산출한다.
-2. 작은 SUID helper를 만들고, file-backed page pointer leak과 한 페이지 범위의
+1. 작은 SUID helper를 만들고, file-backed page pointer leak과 한 페이지 범위의
    `PIPE_BUF_FLAG_CAN_MERGE` overwrite를 QEMU에서 검증한다.
-3. 변조된 helper 실행으로 UID 0과 `KAPO{test_flag}` 획득을 연속 10회 시험한다.
-4. 32-byte와 1024-byte short configuration을 한 장치의 두 configuration으로 제공하는
+2. 변조된 helper 실행으로 UID 0과 `KAPO{test_flag}` 획득을 연속 10회 시험한다.
+3. 32-byte와 1024-byte short configuration을 한 장치의 두 configuration으로 제공하는
    단일 enumeration leak을 시험한다.
-5. 실제 RP2040에서 enumeration, `probe()`, 두 leak, Stage 2와 test flag 획득을 검증한다.
-6. 검증된 exact kernel/rootfs로 참가자 배포 bundle을 만든다.
+4. 실제 RP2040에서 enumeration, `probe()`, 두 leak, Stage 2와 test flag 획득을 검증한다.
+5. 검증된 exact kernel/rootfs로 참가자 배포 bundle을 만든다.
 
 ## 검증 결과
 
@@ -96,6 +102,17 @@
 - 2047/2048/2049-byte payload, 없는 파일, 디렉터리 read 오류와 잘못된 인자 처리: PASS
 - primitive 단서 완화 후 KASAN QEMU Stage 2 runtime regression: PASS (default와 `seq`
   파일 payload 모두 `trigger-stage2`가 2048 반환, slab-out-of-bounds write 재검출)
+- target-equivalent Linux 6.8.12 `struct pipe_buffer` layout compiler extraction: PASS
+  (40 bytes; `page=0`, `offset=8`, `len=12`, `ops=16`, `flags=24`, `private=32`)
+- Stage 2 pipe-entry payload generator 동적·정적 `-Wall -Wextra -Werror` build: PASS
+- Stage 2 pipe-entry payload generator 2048-byte 길이, zero prefix/tail, little-endian
+  field packing과 `page=0`, `ops=0`, 음수 주소, offset 4095 이상, 숫자가 아닌 입력 거부:
+  PASS
+- layout verifier Linux 6.8.12 source/output, matching `source` link 및 target `.config`
+  SHA-256 불일치 거부: PASS
+- 생성 pipe-entry payload를 Raw Gadget 파일 입력으로 보낸 Linux 6.8.12 KASAN QEMU
+  Stage 2 ioctl: PASS (2048-byte 반환 및 기존 allocation-boundary report). 이 시험은
+  live entry lifetime과 page-cache write를 검증하지 않는다.
 - Stage 2의 조작된 pipe metadata 및 page primitive: NOT TESTED
 - SUID helper file-backed page pointer leak: NOT TESTED
 - `page_cache_pipe_buf_ops`와 `PIPE_BUF_FLAG_CAN_MERGE` page-cache write: NOT TESTED

@@ -152,6 +152,17 @@ RP2040으로 제작한 USB 장치를 이용해 취약한 Linux USB 커널 드라
     PASS
   - 단서 완화 후 QEMU에서 파일 payload를 사용한 default/seq Stage 2 ioctl의
     2048-byte 반환 및 KASAN write report: PASS
+  - target-equivalent Linux 6.8.12 build headers를 컴파일해 산출한
+    `struct pipe_buffer` layout: PASS. 크기는 40 bytes이고 `page`, `offset`,
+    `len`, `ops`, `flags`, `private`의 byte offset은 각각 0, 8, 12, 16, 24,
+    32다.
+  - 1024-byte allocation prefix를 zero로 유지하고 바로 뒤 entry 하나를
+    little-endian으로 재구성하는 2048-byte payload 생성과 자체 검사: PASS.
+    page/ops/offset은 실행 시 입력이며 binary payload와 실제 주소는 저장소에
+    포함하지 않는다.
+  - 생성 payload를 Raw Gadget file-payload 경로로 전달한 QEMU Stage 2 ioctl의
+    2048-byte 반환과 KASAN allocation-boundary report: PASS. 이 전달 검증은 live
+    entry의 reference lifetime이나 page-cache write를 검증하지 않는다.
   - controlled pipe metadata 및 page-cache write: NOT TESTED
 - 상태: overflow와 live pipe target 도달은 Confirmed. page primitive와 최종 exploit
   연결은 Hypothesis.
@@ -200,8 +211,13 @@ RP2040으로 제작한 USB 장치를 이용해 취약한 Linux USB 커널 드라
 
 ### 의도된 pipe metadata
 
-Stage 2 overflow로 인접 live pipe ring의 활성 entry를 다음 의미로 재구성한다. 실제
-필드 offset과 symbol offset은 최종 Linux 6.8.x build를 기준으로 산출한다.
+Stage 2 overflow로 인접 live pipe ring의 활성 entry를 다음 의미로 재구성한다. target
+Linux 6.8.12 build에서 `struct pipe_buffer` 크기는 40 bytes이며 field offset은
+`page=0`, `offset=8`, `len=12`, `ops=16`, `flags=24`, `private=32`로 재현 가능하게
+확인했다. `scripts/verify-pipe-buffer-layout.sh <linux-source> <linux-output>`는 target
+header와 generated configuration을 컴파일해 이 값을 출력한다. 이 스크립트는 source와
+output이 모두 Linux 6.8.12이고 output의 `source` link가 입력 source와 일치하는지
+검사한 뒤 target `.config` SHA-256와 일치해야 통과한다.
 
 ```text
 page    = Stage 1에서 유출한 SUID helper page의 struct page 주소
@@ -215,7 +231,11 @@ private = 0
 helper의 patch offset 바로 앞 1바이트를 pipe에 `splice()`해 유효한 page reference와
 활성 entry를 만든다. Stage 2 payload가 해당 entry를 재구성한 뒤 pipe에 쓰면
 `offset + len`부터 helper의 page cache가 바뀌어야 한다. 이 동작과 reference lifetime,
-page boundary 제약은 target-equivalent QEMU에서 별도로 검증한다.
+page boundary 제약은 target-equivalent QEMU에서 별도로 검증한다. payload generator는
+allocation의 첫 1024 bytes와 entry 뒤 tail을 zero로 유지하고 byte 1024의 entry만
+채운다. `page`, `ops`, `offset`은 `scripts/make-stage2-pipe-payload.c`에 runtime input으로
+전달한다. payload 생성 자체는 PASS지만 live entry 재구성과 page-cache write는 NOT
+TESTED다. `len=1`이 page를 넘지 않도록 generator는 offset을 0..4094로 제한한다.
 
 ### Stage 1 leak 구성
 

@@ -5,7 +5,7 @@ Updated: 2026-09-05 KST
 From: Codex on desktop
 
 Branch: `main`
-Base commit: `87a092d`
+Base commit: `fab22ad`
 
 ## Current state
 
@@ -53,6 +53,21 @@ Base commit: `87a092d`
   `ffff8880041fc800`; the vulnerable allocation reused that exact address. The
   next still-live ring was at `ffff8880041fcc00`, so the 2048-byte receive
   reaches it after crossing the 1024-byte vulnerable object.
+- `scripts/verify-pipe-buffer-layout.sh` compiles the exact Linux 6.8.12 source
+  headers with the target-equivalent build's generated headers. It requires
+  source/output version 6.8.12, a matching output `source` link, and the output
+  `.config` SHA-256. The required config hash is
+  `46ef8ef94a8bd7dd2f91525c26e2b286173c25f6818bb2d065d7db58ecf527a0`.
+  It derived a 40-byte `struct pipe_buffer` with `page=0`, `offset=8`, `len=12`,
+  `ops=16`, `flags=24`, and `private=32` byte offsets.
+- `scripts/make-stage2-pipe-payload.c` accepts a new output path plus runtime
+  `page`, `ops`, and `offset` values. It writes exactly 2048 bytes: a zeroed
+  1024-byte vulnerable allocation prefix, one reconstructed entry at byte 1024
+  (`len=1`, `PIPE_BUF_FLAG_CAN_MERGE`, `private=0`), and a zeroed tail. It
+  self-checks every preserved region and serialized field before writing. It
+  rejects negative addresses and offsets above 4094 so `offset + len` stays
+  within one page. On write/close failure it removes only the output path it
+  created. No dynamic address or payload binary is tracked.
 - The selected final escalation design is a Dirty Pipe-style page-cache write
   against a dedicated root-owned SUID helper. Reconstruct the adjacent live
   `pipe_buffer` with a leaked helper-page `struct page *`, the KASLR-adjusted
@@ -66,10 +81,10 @@ Base commit: `87a092d`
 
 ## Next action
 
-Derive the exact target-build `pipe_buffer` field offsets and construct a
-2048-byte payload file that preserves the vulnerable allocation prefix while
-rebuilding the adjacent live pipe entry. Then begin the dedicated SUID helper
-and file-backed page leak work described in `docs/SPEC.md`.
+Create the dedicated SUID helper and derive a file-backed page pointer leak.
+Use the existing payload generator only after validating the helper page
+reference and live entry lifetime in target-equivalent QEMU. Do not claim the
+page-cache write or privilege escalation as confirmed until runtime tested.
 
 ## Changed files
 
@@ -80,6 +95,10 @@ and file-backed page leak work described in `docs/SPEC.md`.
   the page-cache primitive's NOT TESTED boundary.
 - `STATUS.md`: record payload validation and post-concealment QEMU regression.
 - `HANDOFF.md`: record this task and the next reproducible action.
+- `scripts/verify-pipe-buffer-layout.sh`: compile target headers to derive the
+  pipe buffer layout from the exact target source and output tree.
+- `scripts/make-stage2-pipe-payload.c`: generate and self-check the exact-size
+  Stage 2 pipe-entry payload without tracking dynamic addresses or binaries.
 
 ## Verification commands
 
@@ -113,6 +132,20 @@ and file-backed page leak work described in `docs/SPEC.md`.
   the 2048-byte write into the 1024-byte kmalloc-1k allocation.
 - Stage 2 KASAN slab-out-of-bounds and SLUB redzone reports: PASS
 - Stage 2 exact freed-slot reuse and adjacent live-pipe reach: PASS
+- `scripts/verify-pipe-buffer-layout.sh /tmp/usb-kernel-ctf-src.IavzRx
+  /tmp/usb-kernel-runtime-nokasan-out`: PASS. The target is Linux 6.8.12 and
+  the derived layout is size 40 with offsets 0/8/12/16/24/32. The source link
+  matched and config SHA-256 was
+  `46ef8ef94a8bd7dd2f91525c26e2b286173c25f6818bb2d065d7db58ecf527a0`.
+- Dynamic and static `-Wall -Wextra -Werror` builds of
+  `make-stage2-pipe-payload.c`: PASS. A generated payload was verified for its
+  2048-byte size, zeroed 1024-byte prefix/tail, and little-endian field values.
+  Zero/negative page/ops, offset 4095 or greater, and nonnumeric input were
+  rejected.
+- The generated file was accepted by `raw-gadget-short-config` in Linux 6.8.12
+  KASAN QEMU. `trigger-stage2` returned 2048 and KASAN reported the expected
+  allocation-boundary write. This proves file delivery only; the live entry
+  lifetime and page-cache write remain NOT TESTED.
 - SUID-helper page leak, controlled page-cache write, UID 0, test flag, and dual
   configuration enumeration: NOT TESTED
 - Participant release bundle: NOT BUILT
