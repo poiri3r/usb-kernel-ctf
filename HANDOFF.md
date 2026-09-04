@@ -5,7 +5,7 @@ Updated: 2026-09-05 KST
 From: Codex on desktop
 
 Branch: `main`
-Base commit: `90ff347`
+Base commit: `87a092d`
 
 ## Current state
 
@@ -44,6 +44,11 @@ Base commit: `90ff347`
   single-pointer `sizeof` mistake and no longer labels the intentional bug.
   KASAN previously reported a 2048-byte slab-out-of-bounds write; a non-KASAN
   `slub_debug=FZ` boot previously reported the right redzone overwritten.
+- `scripts/raw-gadget-short-config.c` keeps its no-argument pipe mode and `seq`
+  mode with the original `A` response. An optional payload file can now be given
+  as `[seq] [payload-file]`; it must contain exactly 2048 bytes and is loaded
+  before Raw Gadget setup. Both modes returned 2048 from `trigger-stage2` in the
+  rebuilt Linux 6.8.12 KASAN QEMU runtime.
 - In a redzone-free single-CPU boot, a 64-ring live-pipe spray freed address
   `ffff8880041fc800`; the vulnerable allocation reused that exact address. The
   next still-live ring was at `ffff8880041fcc00`, so the 2048-byte receive
@@ -61,19 +66,19 @@ Base commit: `90ff347`
 
 ## Next action
 
-Change `scripts/raw-gadget-short-config.c` so its Stage 2 bulk response can read
-exactly 2048 payload bytes from a file named on the command line instead of
-always filling the response with `A`. Preserve the current default mode and
-verify that `scripts/trigger-stage2.c` still returns 2048. Do not start the SUID
-helper until this controllable-payload step passes.
+Derive the exact target-build `pipe_buffer` field offsets and construct a
+2048-byte payload file that preserves the vulnerable allocation prefix while
+rebuilding the adjacent live pipe entry. Then begin the dedicated SUID helper
+and file-backed page leak work described in `docs/SPEC.md`.
 
 ## Changed files
 
-- `usb/class/customdriver.c`: hide the Stage 2 source-level giveaway behind a
-  single-pointer `sizeof` mistake while preserving the x86_64 1:2 size mismatch.
-- `docs/SPEC.md`: record the concealed Stage 2 expression, selected SUID-helper
-  page-cache design, distribution plan, and current validation boundary.
-- `STATUS.md`: update progress, validation results, and remaining work.
+- `scripts/raw-gadget-short-config.c`: accept an optional exact-size Stage 2
+  payload file and require a full 2048-byte EP write while preserving
+  no-argument and `seq` behavior.
+- `docs/SPEC.md`: record the post-concealment QEMU runtime PASS while preserving
+  the page-cache primitive's NOT TESTED boundary.
+- `STATUS.md`: record payload validation and post-concealment QEMU regression.
 - `HANDOFF.md`: record this task and the next reproducible action.
 
 ## Verification commands
@@ -94,7 +99,18 @@ helper until this controllable-payload step passes.
   PASS (the immediately preceding invocation without those paths failed)
 - Post-concealment `customdriver.o` rebuild: PASS. Disassembly shows allocation
   length `count << 3` and bulk receive length `count << 4`.
-- Post-concealment QEMU Stage 2 runtime regression: NOT TESTED.
+- Dynamic and static builds of `raw-gadget-short-config.c` with
+  `-Wall -Wextra -Werror`: PASS.
+- Host CLI tests for no-argument mode, `seq`, exact payload in both modes,
+  2047-byte and 2049-byte inputs, missing files, directory read errors, and
+  extra arguments: PASS. The exact-size cases reached `/dev/raw-gadget`; the
+  host has no Raw Gadget device node.
+- The first incremental KASAN `bzImage` command without the temporary libelf
+  paths failed. Re-running with the preserved include/library paths: PASS.
+- Post-concealment Linux 6.8.12 KASAN QEMU Stage 2 runtime: PASS. The rebuilt
+  kernel bound `ff/42/01` to `kapo_ctf`; file payloads in default and `seq` modes
+  both made `trigger-stage2` print `received 2048 bytes`. KASAN also reproduced
+  the 2048-byte write into the 1024-byte kmalloc-1k allocation.
 - Stage 2 KASAN slab-out-of-bounds and SLUB redzone reports: PASS
 - Stage 2 exact freed-slot reuse and adjacent live-pipe reach: PASS
 - SUID-helper page leak, controlled page-cache write, UID 0, test flag, and dual

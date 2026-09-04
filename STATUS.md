@@ -28,8 +28,11 @@
   redzone 손상으로 각각 검출됐다.
 - custom driver source의 의도적 취약점 주석과 이중 포인터 단서를 제거하고 평범한 record
   배열 allocation의 `sizeof` 실수로 표현했다. Linux 6.8.12 KASAN object에서 allocation은
-  `count * 8`, bulk receive는 `count * 16`으로 유지됨을 확인했다. 변경 후 QEMU runtime
-  regression은 아직 실행하지 않았다.
+  `count * 8`, bulk receive는 `count * 16`으로 유지됨을 확인했다. 변경 후 KASAN QEMU에서도
+  ioctl의 2048-byte 반환과 slab-out-of-bounds write를 다시 확인했다.
+- Raw Gadget 검증 프로그램은 인자 없음과 `seq` 모드의 기존 `A` bulk response를 유지하면서,
+  명령행 파일에서 정확히 2048바이트를 읽어 Stage 2 bulk response로 보낼 수 있다. default와
+  `seq` 양쪽에서 파일 payload를 사용한 QEMU ioctl이 2048을 반환했다.
 - redzone 없는 QEMU trace에서 해제한 live-pipe spray slot
   `ffff8880041fc800`을 Stage 2 allocation이 정확히 재사용했다. 2048-byte receive가
   다음 live ring `ffff8880041fcc00`까지 넘어가는 것을 확인했다.
@@ -48,7 +51,7 @@
 
 ## 다음 작업
 
-1. 고정된 Raw Gadget payload를 조작 가능한 pipe metadata로 교체한다.
+1. 조작 가능한 Raw Gadget payload로 보낼 pipe metadata layout을 산출한다.
 2. 작은 SUID helper를 만들고, file-backed page pointer leak과 한 페이지 범위의
    `PIPE_BUF_FLAG_CAN_MERGE` overwrite를 QEMU에서 검증한다.
 3. 변조된 helper 실행으로 UID 0과 `KAPO{test_flag}` 획득을 연속 10회 시험한다.
@@ -88,7 +91,11 @@
 - Stage 2의 정확한 freed-slot 재사용 및 인접 live-pipe 도달: PASS
 - primitive 단서 완화 후 Linux 6.8.12 `customdriver.o` 재빌드: PASS
 - primitive 단서 완화 후 object의 `count * 8` allocation 및 `count * 16` receive: PASS
-- primitive 단서 완화 후 QEMU Stage 2 runtime regression: NOT TESTED
+- Raw Gadget payload 프로그램의 `-Wall -Wextra -Werror` 정적·동적 빌드: PASS
+- Raw Gadget default/`seq` 기존 CLI와 파일 payload CLI 검사: PASS
+- 2047/2048/2049-byte payload, 없는 파일, 디렉터리 read 오류와 잘못된 인자 처리: PASS
+- primitive 단서 완화 후 KASAN QEMU Stage 2 runtime regression: PASS (default와 `seq`
+  파일 payload 모두 `trigger-stage2`가 2048 반환, slab-out-of-bounds write 재검출)
 - Stage 2의 조작된 pipe metadata 및 page primitive: NOT TESTED
 - SUID helper file-backed page pointer leak: NOT TESTED
 - `page_cache_pipe_buf_ops`와 `PIPE_BUF_FLAG_CAN_MERGE` page-cache write: NOT TESTED

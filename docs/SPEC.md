@@ -62,10 +62,10 @@ RP2040으로 제작한 USB 장치를 이용해 취약한 Linux USB 커널 드라
 
 ## 6. Exploit Chain
 
-> Stage 1 leak과 변경 전 Stage 2 overflow 및 인접 live object 도달은 Confirmed다.
-> source-level 단서 완화 후에는 object의 크기 불일치만 재검증했고 QEMU runtime
-> regression은 `NOT TESTED`다. 아래에서 `NOT TESTED` 또는 `Hypothesis`로 표시한
-> page-cache primitive와 최종 권한 상승도 아직 검증되지 않았다.
+> Stage 1 leak과 Stage 2 overflow 및 인접 live object 도달은 Confirmed다.
+> source-level 단서 완화 후에도 object의 크기 불일치와 QEMU runtime regression을
+> 재검증했다. 아래에서 `NOT TESTED` 또는 `Hypothesis`로 표시한 page-cache primitive와
+> 최종 권한 상승은 아직 검증되지 않았다.
 
 ### Stage 1 — USB core short-configuration leak
 
@@ -150,7 +150,8 @@ RP2040으로 제작한 USB 장치를 이용해 취약한 Linux USB 커널 드라
   - 단서 완화 전 redzone-free single-CPU trace에서 freed pipe ring 주소를 vulnerable
     allocation이 정확히 재사용하고, 바로 높은 주소의 live pipe ring까지 write가 도달:
     PASS
-  - 단서 완화 후 QEMU Stage 2 runtime regression: NOT TESTED
+  - 단서 완화 후 QEMU에서 파일 payload를 사용한 default/seq Stage 2 ioctl의
+    2048-byte 반환 및 KASAN write report: PASS
   - controlled pipe metadata 및 page-cache write: NOT TESTED
 - 상태: overflow와 live pipe target 도달은 Confirmed. page primitive와 최종 exploit
   연결은 Hypothesis.

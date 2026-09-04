@@ -76,11 +76,33 @@ static struct {
 };
 
 static int bulk_in_endpoint;
+static uint8_t record_payload[RECORD_COUNT * RECORD_SIZE];
 
 static void fail(const char *operation)
 {
 	perror(operation);
 	exit(EXIT_FAILURE);
+}
+
+static void load_record_payload(const char *path)
+{
+	FILE *file = fopen(path, "rb");
+	size_t length;
+
+	if (!file)
+		fail(path);
+	length = fread(record_payload, 1, sizeof(record_payload), file);
+	if (ferror(file))
+		fail("read payload");
+	if (length != sizeof(record_payload) || fgetc(file) != EOF) {
+		fprintf(stderr, "%s: payload must be exactly %zu bytes\n", path,
+			sizeof(record_payload));
+		exit(EXIT_FAILURE);
+	}
+	if (ferror(file))
+		fail("read payload");
+	if (fclose(file))
+		fail("close payload");
 }
 
 static void groom_pipe_buffers(void)
@@ -145,11 +167,18 @@ static void *send_records(void *argument)
 		uint8_t data[RECORD_COUNT * RECORD_SIZE];
 	} transfer = { .io.length = sizeof(transfer.data) };
 	int fd = (int)(intptr_t)argument;
+	int result;
 
 	transfer.io.ep = bulk_in_endpoint;
-	memset(transfer.data, 'A', sizeof(transfer.data));
-	if (ioctl(fd, USB_RAW_IOCTL_EP_WRITE, &transfer) < 0)
+	memcpy(transfer.data, record_payload, sizeof(transfer.data));
+	result = ioctl(fd, USB_RAW_IOCTL_EP_WRITE, &transfer);
+	if (result < 0)
 		fail("USB_RAW_IOCTL_EP_WRITE");
+	if ((size_t)result != sizeof(transfer.data)) {
+		fprintf(stderr, "USB_RAW_IOCTL_EP_WRITE: wrote %d of %zu bytes\n",
+			result, sizeof(transfer.data));
+		exit(EXIT_FAILURE);
+	}
 	return NULL;
 }
 
@@ -157,14 +186,31 @@ int main(int argc, char **argv)
 {
 	struct usb_raw_init init = { .speed = USB_SPEED_HIGH };
 	struct control_event event;
+	const char *payload_path = NULL;
+	int seq_mode = 0;
 	int fd;
+
+	if (argc > 1 && !strcmp(argv[1], "seq")) {
+		seq_mode = 1;
+		if (argc == 3)
+			payload_path = argv[2];
+		else if (argc > 3)
+			goto usage;
+	} else if (argc == 2) {
+		payload_path = argv[1];
+	} else if (argc > 2) {
+		goto usage;
+	}
+	memset(record_payload, 'A', sizeof(record_payload));
+	if (payload_path)
+		load_record_payload(payload_path);
 
 	strcpy((char *)init.driver_name, "dummy_udc");
 	strcpy((char *)init.device_name, "dummy_udc.0");
 	fd = open("/dev/raw-gadget", O_RDWR);
 	if (fd < 0)
 		fail("open /dev/raw-gadget");
-	if (argc == 2 && !strcmp(argv[1], "seq")) {
+	if (seq_mode) {
 		short_configuration.configuration.wTotalLength =
 			htole16(SEQ_CONFIG_LENGTH);
 		groom_seq_operations();
@@ -220,4 +266,8 @@ int main(int argc, char **argv)
 				fail("USB_RAW_IOCTL_EP0_STALL");
 		}
 	}
+
+usage:
+	fprintf(stderr, "usage: %s [seq] [payload-file]\n", argv[0]);
+	return EXIT_FAILURE;
 }
