@@ -1,11 +1,48 @@
 # Handoff
 
+This document records the current checkpoint and verification limits; read it
+before resuming work or moving to another machine.
+
 Updated: 2026-09-05 KST
 
 From: Codex on desktop
 
 Branch: `main`
-Base commit: `fab22ad`
+Checkpoint base commit: `50c2d35`
+
+## Session authorization
+
+- On 2026-09-05 the user explicitly authorized repository-local file changes,
+  builds, tests, Git add/commit, remote inspection, network operations required
+  for this project, and pushes to the configured existing `origin` remote.
+- The authorization includes `scripts/session-finish.sh` and its commit/push
+  actions. It excludes unrelated file deletion and system-wide changes.
+- After the interrupted finish attempt, `git status`, `git remote -v`, recent
+  commits, reflog, index lock, and staged/unstaged diffs were checked. HEAD and
+  local `origin/main` remained `50c2d35`, no index lock or Git process remained,
+  and no duplicate commit had been created.
+
+## Previous progress-save checkpoint
+
+- Scope: save the existing progress without changing implementation or design.
+- Local `origin/main` equals HEAD. No remote query, pull, commit, or push was
+  performed; server freshness and cross-machine handoff are not confirmed.
+- Six files were already staged at entry: `HANDOFF.md`, `STATUS.md`,
+  `docs/SPEC.md`, `helpers/kapo-helper.c`, `scripts/raw-gadget-short-config.c`,
+  and `scripts/test-helper-page-lifetime.c`. Preserve these existing changes.
+- This save adds only checkpoint text to `STATUS.md` and `HANDOFF.md` in the
+  working tree; the pre-existing index is preserved.
+- The verification results below are historical records. Builds and runtime
+  tests were not rerun, and original runtime logs were not revalidated during
+  this save. `git diff --check` and `git diff --cached --check`: PASS.
+- First resume action: run `git status --short --branch`, then establish
+  availability of the historical logs and build environment before relying on
+  previous verification results.
+- `README.md` marks firmware upload complete, while `STATUS.md` records RP2040
+  hardware testing as NOT TESTED. Upload artifacts and the scope of that
+  checkbox remain unverified; do not infer hardware validation from it.
+- The Changed files and Verification commands sections below retain cumulative
+  history; the six-file list above identifies the pending changes at this save.
 
 ## Current state
 
@@ -68,11 +105,30 @@ Base commit: `fab22ad`
   rejects negative addresses and offsets above 4094 so `offset + len` stays
   within one page. On write/close failure it removes only the output path it
   created. No dynamic address or payload binary is tracked.
+- `helpers/kapo-helper.c` is a minimal dedicated helper that prints a fixed
+  message and accepts no input. It is made root-owned mode `4755` only in a
+  temporary QEMU initramfs; no helper binary or rootfs is tracked.
+- `scripts/raw-gadget-short-config.c helper <file>` fills pipe entry 0 with an
+  anonymous padding page and entry 1 with one byte spliced from the helper's
+  executable page at file offset `0x1000`. It releases 256 rings in reverse
+  order before Raw Gadget initialization. A static non-PIE helper has `main`
+  in this executable `LOAD` segment. In a KASLR-enabled, redzone-free Linux
+  6.8.12 QEMU boot, the raw descriptor's configuration offset `0x28` contained
+  a canonical vmemmap candidate on five of five cold boots. All five preserved
+  logs contain the same value, `ffffea0001f6ce00`; the logs do not independently
+  prove that it identifies the helper executable page.
+- `scripts/test-helper-page-lifetime.c` splices an executable-page byte into a
+  live pipe, closes the source descriptor, waits 10 seconds, and verifies the
+  same byte can still be read. The target-equivalent QEMU test passed. This
+  establishes only the observable live-pipe lifetime/reference behavior, not a
+  reconstructed entry or write primitive.
 - The selected final escalation design is a Dirty Pipe-style page-cache write
   against a dedicated root-owned SUID helper. Reconstruct the adjacent live
   `pipe_buffer` with a leaked helper-page `struct page *`, the KASLR-adjusted
   `page_cache_pipe_buf_ops`, and `PIPE_BUF_FLAG_CAN_MERGE`. This design is
-  selected but NOT TESTED.
+  selected. The live-pipe reference is PASS. The helper page identity is
+  UNVERIFIED, and the controlled page-cache write and privilege escalation
+  remain NOT TESTED.
 - The planned participant build keeps `kapo_ctf` built into the kernel. The
   public bundle should contain the exact `bzImage`, symbolized non-DWARF
   `vmlinux`, `System.map`, kernel config, Ubuntu 24.04 rootfs, helper copy,
@@ -81,10 +137,12 @@ Base commit: `fab22ad`
 
 ## Next action
 
-Create the dedicated SUID helper and derive a file-backed page pointer leak.
-Use the existing payload generator only after validating the helper page
-reference and live entry lifetime in target-equivalent QEMU. Do not claim the
-page-cache write or privilege escalation as confirmed until runtime tested.
+Add a host-to-device control transfer carrying the Stage 1 `page`, KASLR-derived
+`page_cache_pipe_buf_ops`, and patch offset. Place a one-entry helper-backed live
+pipe immediately after the freed kmalloc-1k slot, then validate page identity,
+the reconstructed entry, and the page-cache write in target-equivalent QEMU.
+Do not claim page-cache write or privilege escalation as confirmed until runtime
+tested.
 
 ## Changed files
 
@@ -99,6 +157,10 @@ page-cache write or privilege escalation as confirmed until runtime tested.
   pipe buffer layout from the exact target source and output tree.
 - `scripts/make-stage2-pipe-payload.c`: generate and self-check the exact-size
   Stage 2 pipe-entry payload without tracking dynamic addresses or binaries.
+- `helpers/kapo-helper.c`: source-only fixed-output helper for the temporary
+  root-owned SUID test artifact.
+- `scripts/test-helper-page-lifetime.c`: observable file-page live-pipe
+  reference retention test.
 
 ## Verification commands
 
@@ -146,16 +208,32 @@ page-cache write or privilege escalation as confirmed until runtime tested.
   KASAN QEMU. `trigger-stage2` returned 2048 and KASAN reported the expected
   allocation-boundary write. This proves file delivery only; the live entry
   lifetime and page-cache write remain NOT TESTED.
-- SUID-helper page leak, controlled page-cache write, UID 0, test flag, and dual
-  configuration enumeration: NOT TESTED
+- Target-equivalent Linux 6.8.12 helper-page leak candidate: UNVERIFIED. Build `kapo-helper`,
+  `test-helper-page-lifetime`, and `raw-gadget-short-config` statically with
+  `-Wall -Wextra -Werror`; create a temporary initramfs under `fakeroot` with
+  `/kapo-helper` owner `0:0` and mode `4755`; build the helper static non-PIE;
+  boot with 1 vCPU, 2 GiB, KASLR enabled, no KASAN and no `slub_debug`. Run
+  `short-config helper /kapo-helper`, then read eight bytes at sysfs descriptor
+  offset 58 (configuration offset `0x28`). A canonical vmemmap candidate was
+  nonzero in five of five cold boots, but all preserved logs have the same value
+  and do not independently establish the candidate's page identity.
+- Target-equivalent live helper pipe reference: PASS. The source descriptor was
+  closed after `splice()` and the held pipe returned its original executable-page byte
+  after 10 seconds.
+- Controlled page-cache write, UID 0, test flag, and dual configuration
+  enumeration: NOT TESTED
 - Participant release bundle: NOT BUILT
 - Initial build attempts: FAIL until missing `flex`, `bison`, and libelf
   development files were unpacked into `/tmp`; no system packages were changed.
 
 ## Notes
 
-- Stage 1 pointer leaks and Stage 2 live-object reach are reproduced in QEMU;
-  the SUID-helper page-cache primitive and final exploit remain hypotheses.
+- Stage 1 pointer candidates and Stage 2 live-object reach are reproduced in
+  QEMU; helper page identity, the SUID-helper page-cache primitive, and the final
+  exploit remain hypotheses.
+- The current protocol has no guest-to-device path for runtime `page` and `ops`
+  values. The preloaded file-payload test therefore does not model the complete
+  KASLR-aware chain.
 - A dual-configuration device (32-byte seq leak plus 1024-byte helper-page leak)
   may remove an extra reconnect, but this is an Unverified optimization. Keep
   the existing separate modes until it passes QEMU and RP2040 tests.

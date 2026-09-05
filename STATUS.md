@@ -1,6 +1,44 @@
 # 프로젝트 진행 상태
 
+이 문서는 현재 진행 상황과 검증 범위를 담으며, 작업을 재개할 때 읽는다.
+
 최종 갱신: 2026-09-05 KST
+
+## 2026-09-05 이전 저장 시점
+
+- 당시 브랜치와 커밋: `main`, `50c2d35`. 로컬 `origin/main` 참조도 같은 커밋이었다.
+  이번 저장에서는 원격 조회를 하지 않아 서버의 최신 상태는 미확인이다.
+- 기존 staged 변경 6개를 보존했다: `HANDOFF.md`, `STATUS.md`, `docs/SPEC.md`,
+  `helpers/kapo-helper.c`, `scripts/raw-gadget-short-config.c`,
+  `scripts/test-helper-page-lifetime.c`.
+- 이번 작업은 상태 문서 저장이다. 아래 기존 빌드·QEMU 시험 결과는 이전 기록이며,
+  이번 세션에서 재실행하거나 원본 runtime 로그를 재검증하지 않았다.
+- 이번 저장의 `git diff --check`와 `git diff --cached --check`: PASS.
+- 당시 커밋·push는 수행하지 않았고 문서 추가분은 unstaged로 남겼다.
+- 미확인 사항: `README.md`의 펌웨어 업로드 완료 표시는 아래 RP2040 하드웨어 시험
+  `NOT TESTED`와 별개다. 해당 업로드의 산출물과 시험 범위는 재개 시 확인해야 한다.
+- 재개 시 먼저 `git status --short --branch`로 저장된 변경을 확인하고, 기존 검증의
+  원본 로그와 빌드 환경이 남아 있는지 확인한다. 설계 변경이나 새 가설은 없다.
+
+## 2026-09-05 독립 재검증
+
+- 사용자는 이 프로젝트에 필요한 로컬 수정, 빌드, 테스트, Git add/commit,
+  원격 확인, 네트워크 작업과 기존 `origin`으로의 push 및
+  `scripts/session-finish.sh` 실행을 명시적으로 승인했다. 프로젝트와 무관한 파일
+  삭제와 시스템 전체 변경은 승인 범위에서 제외된다.
+- Stage 1 host model, userspace 검증 도구 6개의 `-Wall -Wextra -Werror` build,
+  `git diff --check`, `git diff --cached --check`: PASS.
+- Linux 6.8.12 source와 현재 `usb/core/config.c`, `usb/core/message.c`,
+  `usb/class/customdriver.c`가 보존된 build source와 byte-for-byte 일치함을 확인했다.
+- 보존된 helper leak 5회 로그의 후보 주소는 모두 `ffffea0001f6ce00`으로 같았다.
+  기존 `HANDOFF.md`의 boot마다 값이 달랐다는 기록은 잘못되어 수정했다.
+- 로그는 canonical vmemmap 후보와 enumeration 성공을 확인하지만 후보가 helper의
+  executable page인지 독립적으로 식별하지 않는다. helper page leak 판정은
+  `Unverified candidate`로 낮췄다.
+- 현재 Stage 2 protocol에는 guest가 Stage 1의 동적 `page`와 `ops`를 USB device로
+  전달하는 OUT 경로가 없다. file payload 시험은 전체 동적 chain 검증이 아니다.
+- 기존 adjacency harness는 helper-backed live pipe를 인접 target으로 만들거나
+  page-cache write를 실행하지 않는다. 이 연결을 구현하고 runtime 검증해야 한다.
 
 ## 완료
 
@@ -46,6 +84,14 @@
 - 최종 권한 상승 설계는 유출한 SUID helper의 file-backed `struct page *`, KASLR로
   계산한 `page_cache_pipe_buf_ops`, `PIPE_BUF_FLAG_CAN_MERGE`를 이용한 page-cache
   overwrite로 선택했다. 이 설계의 runtime 동작은 아직 검증하지 않았다.
+- `helpers/kapo-helper.c`에 입력 없이 고정 메시지만 출력하는 전용 helper source를
+  추가했다. QEMU 임시 rootfs에서만 root-owned mode `4755`로 설정했다.
+- helper의 executable file-backed page를 두 번째 pipe entry에 넣고 ring을 역순으로
+  해제하는 Stage 1 grooming은 KASLR을 켠 redzone 없는 Linux 6.8.12 QEMU에서
+  configuration offset `0x28`의 canonical vmemmap 후보를 5/5회 유출했다. 별도
+  live pipe는 helper source fd를 닫은 뒤 10초 후에도 executable-page의 같은 byte를
+  반환했다. 후보의 page identity, controlled metadata와 page-cache write는 검증하지
+  않았다.
 - 참가자 배포 방향은 custom driver built-in과 exact target의 `bzImage`, `vmlinux`,
   `System.map`, kernel config, Ubuntu 24.04 rootfs 및 RP2040 firmware template 제공으로
   정리했다. release artifact는 아직 만들지 않았다.
@@ -58,13 +104,15 @@
 
 ## 다음 작업
 
-1. 작은 SUID helper를 만들고, file-backed page pointer leak과 한 페이지 범위의
-   `PIPE_BUF_FLAG_CAN_MERGE` overwrite를 QEMU에서 검증한다.
-2. 변조된 helper 실행으로 UID 0과 `KAPO{test_flag}` 획득을 연속 10회 시험한다.
-3. 32-byte와 1024-byte short configuration을 한 장치의 두 configuration으로 제공하는
+1. guest에서 Stage 1의 동적 `page`와 KASLR-derived `page_cache_pipe_buf_ops`를
+   USB device로 전달하는 control OUT protocol을 추가한다.
+2. helper-backed entry 하나만 가진 live pipe를 vulnerable allocation 바로 뒤에
+   배치하고, page identity와 page-cache write를 QEMU에서 함께 검증한다.
+3. 변조된 helper 실행으로 UID 0과 `KAPO{test_flag}` 획득을 연속 10회 시험한다.
+4. 32-byte와 1024-byte short configuration을 한 장치의 두 configuration으로 제공하는
    단일 enumeration leak을 시험한다.
-4. 실제 RP2040에서 enumeration, `probe()`, 두 leak, Stage 2와 test flag 획득을 검증한다.
-5. 검증된 exact kernel/rootfs로 참가자 배포 bundle을 만든다.
+5. 실제 RP2040에서 enumeration, `probe()`, 두 leak, Stage 2와 test flag 획득을 검증한다.
+6. 검증된 exact kernel/rootfs로 참가자 배포 bundle을 만든다.
 
 ## 검증 결과
 
@@ -114,7 +162,9 @@
   Stage 2 ioctl: PASS (2048-byte 반환 및 기존 allocation-boundary report). 이 시험은
   live entry lifetime과 page-cache write를 검증하지 않는다.
 - Stage 2의 조작된 pipe metadata 및 page primitive: NOT TESTED
-- SUID helper file-backed page pointer leak: NOT TESTED
+- SUID helper file-backed page pointer leak: UNVERIFIED CANDIDATE (target-equivalent
+  QEMU 5/5에서 canonical vmemmap 후보를 관찰했으나 page identity 미검증)
+- source fd를 닫은 live helper pipe entry reference 유지: PASS (10초 후 byte 동일)
 - `page_cache_pipe_buf_ops`와 `PIPE_BUF_FLAG_CAN_MERGE` page-cache write: NOT TESTED
 - 변조된 SUID helper를 통한 UID 0 및 test flag 획득: NOT TESTED
 - 두 configuration을 이용한 단일 enumeration leak: NOT TESTED

@@ -105,6 +105,12 @@ RP2040으로 제작한 USB 장치를 이용해 취약한 Linux USB 커널 드라
     남는다. 하위 1바이트는 알려진 symbol offset으로 복원해 KASLR slide를 계산한다.
   - pipe 해제 시 `ops`는 NULL이 되므로 freed pipe ring 자체에서는
     `anon_pipe_buf_ops`를 얻지 못한다.
+  - root-owned SUID helper의 executable page를 pipe ring의 두 번째 entry에 `splice()`한
+    뒤 역순으로 ring을 해제하면, canonical vmemmap 후보가 configuration offset
+    `0x28`에 남는다. target-equivalent QEMU에서 5/5회 관찰했지만 보존된 로그의 주소는
+    모두 같고, 후보가 helper page인지 독립적으로 식별하지 않았다. helper source
+    fd를 닫은 별도 live pipe도 10초 뒤 executable-page byte를 반환해 page reference가
+    유지됨을 확인했다. 이 확인은 page-cache write를 수행하지 않는다.
 
 ### Stage 2 — Custom driver
 
@@ -131,8 +137,8 @@ RP2040으로 제작한 USB 장치를 이용해 취약한 Linux USB 커널 드라
   - leaked `proc_single_show`에서 KASLR slide와 `page_cache_pipe_buf_ops` 주소를
     계산한다.
   - 최종 대상으로 사용할 SUID helper의 file-backed page를 pipe entry에 넣고,
-    해제된 ring에서 해당 `struct page *`를 Stage 1로 유출한다. 이 target-specific
-    leak은 아직 검증하지 않았다.
+    해제된 ring에서 해당 `struct page *`를 Stage 1로 유출한다. helper 전용
+    grooming은 target-equivalent QEMU에서 확인했다.
   - overflow payload는 인접 live `pipe_buffer`의 `page`, `offset`, `len`, `ops`,
     `flags`, `private`를 일관된 값으로 재구성한다.
   - `PIPE_BUF_FLAG_CAN_MERGE`를 설정한 뒤 pipe write를 외부 trigger로 사용해
@@ -163,9 +169,12 @@ RP2040으로 제작한 USB 장치를 이용해 취약한 Linux USB 커널 드라
   - 생성 payload를 Raw Gadget file-payload 경로로 전달한 QEMU Stage 2 ioctl의
     2048-byte 반환과 KASAN allocation-boundary report: PASS. 이 전달 검증은 live
     entry의 reference lifetime이나 page-cache write를 검증하지 않는다.
+  - SUID helper의 file-backed page pointer Stage 1 leak: UNVERIFIED CANDIDATE
+    (target-equivalent QEMU 5/5에서 canonical 후보 관찰, page identity 미검증)
+  - live pipe entry의 helper page reference: PASS (source fd close 뒤 10초 보존)
   - controlled pipe metadata 및 page-cache write: NOT TESTED
-- 상태: overflow와 live pipe target 도달은 Confirmed. page primitive와 최종 exploit
-  연결은 Hypothesis.
+- 상태: overflow와 live pipe target 도달은 Confirmed. helper page identity,
+  page-cache primitive와 최종 exploit 연결은 Hypothesis.
 
 ## 7. 검증할 가설
 
@@ -188,7 +197,10 @@ RP2040으로 제작한 USB 장치를 이용해 취약한 Linux USB 커널 드라
   KASAN 및 SLUB에서 allocation 경계 초과를 재현한다.
 - [x] redzone-free QEMU trace에서 Stage 2 allocation이 controlled pipe hole의 정확한
   주소를 재사용하고 인접 live pipe ring까지 도달한다.
-- [ ] SUID helper의 file-backed page pointer를 Stage 1에서 안정적으로 유출할 수 있다.
+- [ ] Stage 1의 canonical vmemmap 후보가 SUID helper의 file-backed page pointer임을
+  독립적으로 식별할 수 있다.
+- [ ] guest가 Stage 1의 동적 `page`와 `ops`를 USB device에 전달하고 같은 연결의
+  Stage 2 bulk payload에 반영할 수 있다.
 - [ ] `page_cache_pipe_buf_ops`와 `PIPE_BUF_FLAG_CAN_MERGE`로 재구성한 pipe entry가
   helper의 page cache를 덮어쓴다.
 - [ ] 변조한 SUID helper 실행으로 UID 0을 획득하고 `KAPO{test_flag}`를 읽는다.
@@ -207,7 +219,8 @@ RP2040으로 제작한 USB 장치를 이용해 취약한 Linux USB 커널 드라
   executable page의 지정된 함수 부분을 root shell payload로 바꾼 뒤 helper를
   실행한다.
 - helper가 UID 0으로 실행된 뒤 `/flag`를 읽는 것을 최종 성공 조건으로 한다.
-- 설계 상태: 선택 완료. runtime 검증 상태: NOT TESTED.
+- 설계 상태: 선택 완료. live pipe reference runtime 검증: PASS. helper page identity,
+  controlled page-cache write와 권한 상승 runtime 검증: NOT TESTED.
 
 ### 의도된 pipe metadata
 
@@ -243,7 +256,9 @@ TESTED다. `len=1`이 page를 넘지 않도록 generator는 offset을 0..4094로
   `proc_single_show`의 상위 7바이트를 얻는 데 사용한다.
 - kmalloc-1k grooming은 일반 anonymous pipe page가 아니라 SUID helper의 file-backed
   page가 두 번째 `pipe_buffer` entry에 남도록 변경한다. 첫 entry는 25-byte USB
-  response가 덮는 영역을 피하기 위한 padding 역할을 한다.
+  response가 덮는 영역을 피하기 위한 padding 역할을 한다. helper grooming은 ring을
+  역순으로 해제해 target-equivalent QEMU에서 5/5회 offset `0x28`의 canonical 후보를
+  관찰했지만 helper page identity는 아직 검증하지 않았다.
 - 참가자 firmware는 우선 기존처럼 32-byte와 1024-byte mode를 나눠 구현한다.
   안정화 후 `bNumConfigurations = 2`로 두 short configuration을 한 번의 enumeration에
   제공하는 방식을 시험한다. 이 단일 연결 방식은 Unverified다.

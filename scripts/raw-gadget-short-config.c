@@ -1,4 +1,5 @@
 // SPDX-License-Identifier: GPL-2.0
+#define _GNU_SOURCE
 #include <endian.h>
 #include <errno.h>
 #include <fcntl.h>
@@ -15,9 +16,11 @@
 #define PIPE_CONFIG_LENGTH 1024
 #define SEQ_CONFIG_LENGTH 32
 #define PIPE_COUNT 128
+#define HELPER_PIPE_COUNT 256
 #define SEQ_COUNT 256
 #define PIPE_RING_SIZE 16
 #define PAGE_SIZE 4096
+#define HELPER_EXEC_PAGE_OFFSET PAGE_SIZE
 #define RECORD_COUNT 128
 #define RECORD_SIZE 16
 #define KAPO_REQUEST_RECORD_COUNT 0x5a
@@ -124,6 +127,34 @@ static void groom_pipe_buffers(void)
 	}
 }
 
+static void groom_helper_page_buffers(const char *path)
+{
+	char page[PAGE_SIZE] = { 0 };
+	int source;
+	int pipes[HELPER_PIPE_COUNT][2];
+	int i;
+
+	source = open(path, O_RDONLY);
+	if (source < 0)
+		fail(path);
+	for (i = 0; i < HELPER_PIPE_COUNT; i++) {
+		loff_t offset = HELPER_EXEC_PAGE_OFFSET;
+
+		if (pipe(pipes[i]))
+			fail("helper pipe grooming");
+		if (write(pipes[i][1], page, sizeof(page)) != sizeof(page))
+			fail("helper pipe grooming");
+		if (splice(source, &offset, pipes[i][1], NULL, 1, 0) != 1)
+			fail("helper pipe grooming");
+	}
+	for (i = HELPER_PIPE_COUNT - 1; i >= 0; i--) {
+		close(pipes[i][0]);
+		close(pipes[i][1]);
+	}
+	if (close(source))
+		fail("close helper");
+}
+
 static void groom_seq_operations(void)
 {
 	int files[SEQ_COUNT];
@@ -187,6 +218,7 @@ int main(int argc, char **argv)
 	struct usb_raw_init init = { .speed = USB_SPEED_HIGH };
 	struct control_event event;
 	const char *payload_path = NULL;
+	const char *helper_path = NULL;
 	int seq_mode = 0;
 	int fd;
 
@@ -196,6 +228,12 @@ int main(int argc, char **argv)
 			payload_path = argv[2];
 		else if (argc > 3)
 			goto usage;
+	} else if (argc > 1 && !strcmp(argv[1], "helper")) {
+		if (argc < 3 || argc > 4)
+			goto usage;
+		helper_path = argv[2];
+		if (argc == 4)
+			payload_path = argv[3];
 	} else if (argc == 2) {
 		payload_path = argv[1];
 	} else if (argc > 2) {
@@ -214,6 +252,8 @@ int main(int argc, char **argv)
 		short_configuration.configuration.wTotalLength =
 			htole16(SEQ_CONFIG_LENGTH);
 		groom_seq_operations();
+	} else if (helper_path) {
+		groom_helper_page_buffers(helper_path);
 	} else {
 		groom_pipe_buffers();
 	}
@@ -268,6 +308,8 @@ int main(int argc, char **argv)
 	}
 
 usage:
-	fprintf(stderr, "usage: %s [seq] [payload-file]\n", argv[0]);
+	fprintf(stderr,
+		"usage: %s [seq [payload-file]|helper <file> [payload-file]|payload-file]\n",
+		argv[0]);
 	return EXIT_FAILURE;
 }
