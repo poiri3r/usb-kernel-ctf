@@ -1,171 +1,101 @@
 # 프로젝트 진행 상태
 
-이 문서는 현재 진행 상황과 검증 범위를 담으며, 작업을 재개할 때 읽는다.
+이 문서는 이정표별 진행 상황과 검증 범위를 기록한다. 작업 재개 순서는
+`docs/SPEC.md` → 이 문서 → `HANDOFF.md`이다.
 
-최종 갱신: 2026-09-05 KST
+최종 갱신: 2026-09-06 KST
 
-## 2026-09-05 이전 저장 시점
+## 현재 요약
 
-- 당시 브랜치와 커밋: `main`, `50c2d35`. 로컬 `origin/main` 참조도 같은 커밋이었다.
-  이번 저장에서는 원격 조회를 하지 않아 서버의 최신 상태는 미확인이다.
-- 기존 staged 변경 6개를 보존했다: `HANDOFF.md`, `STATUS.md`, `docs/SPEC.md`,
-  `helpers/kapo-helper.c`, `scripts/raw-gadget-short-config.c`,
-  `scripts/test-helper-page-lifetime.c`.
-- 이번 작업은 상태 문서 저장이다. 아래 기존 빌드·QEMU 시험 결과는 이전 기록이며,
-  이번 세션에서 재실행하거나 원본 runtime 로그를 재검증하지 않았다.
-- 이번 저장의 `git diff --check`와 `git diff --cached --check`: PASS.
-- 당시 커밋·push는 수행하지 않았고 문서 추가분은 unstaged로 남겼다.
-- 미확인 사항: `README.md`의 펌웨어 업로드 완료 표시는 아래 RP2040 하드웨어 시험
-  `NOT TESTED`와 별개다. 해당 업로드의 산출물과 시험 범위는 재개 시 확인해야 한다.
-- 재개 시 먼저 `git status --short --branch`로 저장된 변경을 확인하고, 기존 검증의
-  원본 로그와 빌드 환경이 남아 있는지 확인한다. 설계 변경이나 새 가설은 없다.
+| 범위 | 상태 | 근거와 한계 |
+|---|---|---|
+| 문제 설계 및 QEMU exploit chain | PASS | Linux 6.8.12 target-equivalent cold boot 10/10 |
+| 현재 kernel source | BUILD PASS | review fix와 hardware stage ioctl을 포함해 `bzImage` 재빌드 |
+| hardware validation initramfs | BOOT PASS | 1 vCPU, 2 GiB QEMU에서 UID 65534 harness 시작 확인 |
+| RP2040 firmware | BUILD PASS | Pico SDK 2.3.1 ARM build와 host protocol self-test 통과 |
+| hardware-validation bundle | BUILT | 로컬 `dist/hardware-validation/`, artifact hash 검증 통과 |
+| 참가자 pre-release | BUILD/BOOT PASS | `participant-release/`, Ubuntu 24.04.4, UID 65534 shell 확인 |
+| 실제 RP2040 full chain | NOT TESTED | 보드 연결 후 확인 필요 |
+| 참가자 최종 배포본 | NOT FINAL | 실제 장치와 USB passthrough 결과 미확정 |
 
-## 2026-09-05 독립 재검증
+현재 단계는 **검증용 펌웨어·커널 파일 생성 완료, 실제 RP2040 검증 대기**다.
 
-- 사용자는 이 프로젝트에 필요한 로컬 수정, 빌드, 테스트, Git add/commit,
-  원격 확인, 네트워크 작업과 기존 `origin`으로의 push 및
-  `scripts/session-finish.sh` 실행을 명시적으로 승인했다. 프로젝트와 무관한 파일
-  삭제와 시스템 전체 변경은 승인 범위에서 제외된다.
-- Stage 1 host model, userspace 검증 도구 6개의 `-Wall -Wextra -Werror` build,
-  `git diff --check`, `git diff --cached --check`: PASS.
-- Linux 6.8.12 source와 현재 `usb/core/config.c`, `usb/core/message.c`,
-  `usb/class/customdriver.c`가 보존된 build source와 byte-for-byte 일치함을 확인했다.
-- 보존된 helper leak 5회 로그의 후보 주소는 모두 `ffffea0001f6ce00`으로 같았다.
-  기존 `HANDOFF.md`의 boot마다 값이 달랐다는 기록은 잘못되어 수정했다.
-- 로그는 canonical vmemmap 후보와 enumeration 성공을 확인하지만 후보가 helper의
-  executable page인지 독립적으로 식별하지 않는다. helper page leak 판정은
-  `Unverified candidate`로 낮췄다.
-- 현재 Stage 2 protocol에는 guest가 Stage 1의 동적 `page`와 `ops`를 USB device로
-  전달하는 OUT 경로가 없다. file payload 시험은 전체 동적 chain 검증이 아니다.
-- 기존 adjacency harness는 helper-backed live pipe를 인접 target으로 만들거나
-  page-cache write를 실행하지 않는다. 이 연결을 구현하고 runtime 검증해야 한다.
+## 2026-09-06 — 하드웨어 검증 파일 생성
 
-## 완료
+- `firmware/`에 RP2040 USB controller 직접 제어 firmware와 build 절차를 추가했다.
+- firmware는 helper leak, seq leak, Stage 2 세 모드를 제공하며 vendor request `0x5c`마다
+  2초 disconnect 후 다음 모드로 reconnect한다.
+- QEMU host process가 담당하던 helper/seq heap grooming을 guest hardware harness로
+  옮겼다. firmware는 short descriptor, reconnect, transfer context, bulk payload만 맡는다.
+- current `customdriver.c`는 stage transition ioctl, DMA-safe context 전송, per-device
+  transaction mutex, unprivileged device-node mode를 포함한다.
+- Linux 6.8.12 exact target source를 다시 빌드해 `bzImage`, `vmlinux`, `System.map`,
+  kernel config를 생성했다.
+- test initramfs와 RP2040 UF2를 묶어 `dist/hardware-validation/`을 만들고 모든 artifact의
+  `SHA256SUMS`를 확인했다.
+- QEMU boot smoke에서 current kernel의 `kapo_ctf` 등록, initramfs 실행,
+  `HARDWARE_READY`, `EUID_BEFORE=65534`를 확인했다. 물리 USB 동작은 검증 범위 밖이다.
+- `participant-release/`에 exact kernel, Ubuntu 24.04.4 initramfs, helper 분석 사본,
+  QEMU/USB 연결 스크립트, 최소 RP2040 firmware template과 전체 hash를 모았다.
+- 참가자 initramfs는 QEMU에서 Ubuntu 24.04.4, UID/GID 65534, 9p `/work` mount까지
+  확인했다. 내부 full-chain harness와 완성 attack firmware는 포함하지 않는다.
 
-- Linux 6.8 USB 드라이버 소스 기준본을 `usb/` 아래에 가져왔다.
-- 초기 문제 설계를 `docs/SPEC.md`에 기록했다.
-- 데스크톱-노트북 Git 인계 절차와 안전한 세션 스크립트를 추가했다.
-- 세션 스크립트가 저장소별 GitHub Desktop Git 실행 파일을 사용해 인증된 동기화를
-  수행할 수 있다.
-- Stage 1 short-configuration heap disclosure를 `usb/core/message.c`와
-  `usb/core/config.c`에 구현했다.
-- host 회귀 모델로 parser가 실제 수신 길이 안에서만 동작하고, raw descriptor
-  출력에는 grooming된 canonical pointer가 포함되는 것을 확인했다.
-- KASAN, SLUB debugging, `dummy_hcd`, Raw Gadget을 포함한 QEMU Linux 6.8.12
-  guest에서 short configuration disclosure를 재현했다. 광고된 1024-byte accounted
-  allocation이 해제된 기본 pipe ring을 재사용하며, enumeration이 vendor interface까지
-  진행되는 동안 잔여 vmemmap `struct page *` 값이 sysfs로 유출됐다. 5/5회 확인했다.
-- 별도의 32-byte `seq_operations` grooming mode에서 `proc_single_show`의 상위
-  7바이트가 유출됐다. 알려진 symbol offset으로 덮인 하위 1바이트를 복원해 KASLR
-  slide를 계산할 수 있다. 5/5회 확인했다.
-- 최소 `kapo_ctf` driver가 interface `ff/42/01`에 bind된다. Stage 1 short response
-  이후 `custom_probe()`가 실행되는 것을 QEMU runtime log로 확인했다.
-- Stage 2는 `/dev/kapo_ctf0`을 노출한다. ioctl은 record count 128을 읽고 record
-  포인터 크기를 element 크기로 잘못 사용해 1024-byte buffer를 할당한 뒤 2048-byte
-  record array를 수신한다. QEMU에서 의도한 write가 KASAN slab-out-of-bounds와 SLUB
-  redzone 손상으로 각각 검출됐다.
-- custom driver source의 의도적 취약점 주석과 이중 포인터 단서를 제거하고 평범한 record
-  배열 allocation의 `sizeof` 실수로 표현했다. Linux 6.8.12 KASAN object에서 allocation은
-  `count * 8`, bulk receive는 `count * 16`으로 유지됨을 확인했다. 변경 후 KASAN QEMU에서도
-  ioctl의 2048-byte 반환과 slab-out-of-bounds write를 다시 확인했다.
-- Raw Gadget 검증 프로그램은 인자 없음과 `seq` 모드의 기존 `A` bulk response를 유지하면서,
-  명령행 파일에서 정확히 2048바이트를 읽어 Stage 2 bulk response로 보낼 수 있다. default와
-  `seq` 양쪽에서 파일 payload를 사용한 QEMU ioctl이 2048을 반환했다.
-- redzone 없는 QEMU trace에서 해제한 live-pipe spray slot
-  `ffff8880041fc800`을 Stage 2 allocation이 정확히 재사용했다. 2048-byte receive가
-  다음 live ring `ffff8880041fcc00`까지 넘어가는 것을 확인했다.
-- target-equivalent Linux 6.8.12 build header를 해당 build의 generated configuration과
-  함께 컴파일해 `struct pipe_buffer`의 40-byte 크기와 `page=0`, `offset=8`, `len=12`,
-  `ops=16`, `flags=24`, `private=32` byte offset을 산출했다.
-- `scripts/make-stage2-pipe-payload.c`는 첫 1024 bytes를 zero로 보존하고 byte 1024의
-  인접 `pipe_buffer` entry 하나에 runtime 입력 `page`, `ops`, `offset`, 고정 `len=1`,
-  `PIPE_BUF_FLAG_CAN_MERGE`, `private=0`을 little-endian으로 pack한 정확히 2048-byte
-  payload를 새 파일로 생성한다. generator 자체 검사는 prefix, field, tail을 확인한다.
-- 최종 권한 상승 설계는 유출한 SUID helper의 file-backed `struct page *`, KASLR로
-  계산한 `page_cache_pipe_buf_ops`, `PIPE_BUF_FLAG_CAN_MERGE`를 이용한 page-cache
-  overwrite로 선택했다. 이 설계의 runtime 동작은 아직 검증하지 않았다.
-- `helpers/kapo-helper.c`에 입력 없이 고정 메시지만 출력하는 전용 helper source를
-  추가했다. QEMU 임시 rootfs에서만 root-owned mode `4755`로 설정했다.
-- helper의 executable file-backed page를 두 번째 pipe entry에 넣고 ring을 역순으로
-  해제하는 Stage 1 grooming은 KASLR을 켠 redzone 없는 Linux 6.8.12 QEMU에서
-  configuration offset `0x28`의 canonical vmemmap 후보를 5/5회 유출했다. 별도
-  live pipe는 helper source fd를 닫은 뒤 10초 후에도 executable-page의 같은 byte를
-  반환했다. 후보의 page identity, controlled metadata와 page-cache write는 검증하지
-  않았다.
-- 참가자 배포 방향은 custom driver built-in과 exact target의 `bzImage`, `vmlinux`,
-  `System.map`, kernel config, Ubuntu 24.04 rootfs 및 RP2040 firmware template 제공으로
-  정리했다. release artifact는 아직 만들지 않았다.
+## 이전 완료 이정표
 
-## 진행 중
+- Stage 1 helper `struct page *`와 `proc_single_show` leak으로 runtime `page`, KASLR slide,
+  `page_cache_pipe_buf_ops`를 계산한다.
+- Stage 2의 2048-byte receive가 1024-byte allocation을 넘어 인접 live helper-backed
+  `pipe_buffer`를 재구성한다.
+- `PIPE_BUF_FLAG_CAN_MERGE` page-cache write로 root-owned mode `4755` helper를 바꾸고,
+  비특권 UID 65534에서 UID 0과 `KAPO{test_flag}`를 획득했다.
+- Linux 6.8.12, KASLR enabled, KASAN/SLUB redzone disabled, 1 vCPU, 2 GiB cold boot
+  10/10회에서 full chain을 확인했다.
+- Stage 1 host model, KASAN Stage 2 overflow, redzone-free adjacency, pipe metadata layout,
+  page-cache write를 각각 검증했다.
 
-- Stage 2의 controlled `pipe_buffer`와 SUID helper page-cache write 검증.
-- 실제 Linux 6.8 환경과 RP2040을 이용한 Stage 1 leak 검증.
-- target kernel/rootfs와 참가자 배포 artifact 확정.
+## 남은 작업
 
-## 다음 작업
+1. `docs/HARDWARE-VALIDATION.md`에 따라 UF2를 실제 RP2040 Zero에 flash한다.
+2. supplied kernel/initramfs에 보드를 passthrough하고 enumeration, 두 leak, Stage 2,
+   UID 0, `KAPO{test_flag}`를 확인한다.
+3. 첫 성공 뒤 동일 조건에서 반복 실행해 안정성을 측정하고 USB passthrough 명령을
+   문서에 고정한다.
+4. 실제 장치 결과를 반영한 뒤 USB passthrough 절차와 실제 flag 주입 절차를 고정하고
+   `participant-release/README.md`의 pre-release 표시를 제거한다.
 
-1. guest에서 Stage 1의 동적 `page`와 KASLR-derived `page_cache_pipe_buf_ops`를
-   USB device로 전달하는 control OUT protocol을 추가한다.
-2. helper-backed entry 하나만 가진 live pipe를 vulnerable allocation 바로 뒤에
-   배치하고, page identity와 page-cache write를 QEMU에서 함께 검증한다.
-3. 변조된 helper 실행으로 UID 0과 `KAPO{test_flag}` 획득을 연속 10회 시험한다.
-4. 32-byte와 1024-byte short configuration을 한 장치의 두 configuration으로 제공하는
-   단일 enumeration leak을 시험한다.
-5. 실제 RP2040에서 enumeration, `probe()`, 두 leak, Stage 2와 test flag 획득을 검증한다.
-6. 검증된 exact kernel/rootfs로 참가자 배포 bundle을 만든다.
+single-enumeration dual configuration은 선택적 최적화이며 현재 three-reconnect 방식의
+완료 조건이 아니다.
 
-## 검증 결과
+## 검증 기록
 
-- 세션 스크립트 문법: PASS
-- dirty working tree pull 방지: PASS
-- GitHub Desktop 인증 push: PASS
-- Stage 1 host poisoned-allocation 모델: PASS
-- Linux 6.8 `drivers/usb/core/config.o`, `message.o` 빌드: PASS
-- Stage 1 회귀 모델 5회 반복: PASS
-- 변경 diff checkpatch: 오류 0, 경고 0. USB 표준 `wTotalLength` 필드에 대한 예상된
-  camel-case check 1건만 존재
-- `flex` 없이 수행한 첫 Linux 6.8 빌드: FAIL (빌드 도구 누락)
-- 사용 가능한 libelf 개발 파일 없이 수행한 두 번째 빌드 준비: FAIL
-- KASAN 및 `slub_debug=FZ`를 사용한 QEMU Linux 6.8.12 부팅: PASS
-- Raw Gadget 25/1024-byte short configuration enumeration: PASS
-- sysfs raw descriptor 길이(18-byte device + 1024-byte configuration): PASS
-- 해제한 pipe-ring 주소를 USB buffer가 정확히 재사용한 runtime kmalloc trace: PASS
-- 해제한 kmalloc-1k pipe ring의 vmemmap `struct page *` 유출 5회: PASS
-- 해제한 32-byte `seq_operations`의 상위 7-byte `proc_single_show` 유출 5회: PASS
-- 해제한 pipe ring의 `anon_pipe_buf_ops` 유출: FAIL (`pipe_buf_release()`가 `ops`를
-  지우므로 이 grooming lifetime을 text pointer 유출에 사용하지 않는다)
-- Linux 6.8.12 `customdriver.o` 빌드: PASS
-- 최종 `customdriver.o` 재빌드: 임시 libelf include/library 경로 없이 실행한 첫 명령은
-  FAIL, 경로를 지정한 수정 명령은 PASS
-- Raw Gadget interface `ff/42/01` bind 및 `custom_probe()` 실행: PASS
-- RP2040 enumeration 및 hardware leak 시험: NOT TESTED
-- Stage 2 device node, vendor count request, bulk transfer: PASS
-- Stage 2의 1024-byte allocation 대상 2048-byte KASAN write 검출: PASS
-- Stage 2 SLUB right-redzone overwrite 검출: PASS
-- Stage 2의 정확한 freed-slot 재사용 및 인접 live-pipe 도달: PASS
-- primitive 단서 완화 후 Linux 6.8.12 `customdriver.o` 재빌드: PASS
-- primitive 단서 완화 후 object의 `count * 8` allocation 및 `count * 16` receive: PASS
-- Raw Gadget payload 프로그램의 `-Wall -Wextra -Werror` 정적·동적 빌드: PASS
-- Raw Gadget default/`seq` 기존 CLI와 파일 payload CLI 검사: PASS
-- 2047/2048/2049-byte payload, 없는 파일, 디렉터리 read 오류와 잘못된 인자 처리: PASS
-- primitive 단서 완화 후 KASAN QEMU Stage 2 runtime regression: PASS (default와 `seq`
-  파일 payload 모두 `trigger-stage2`가 2048 반환, slab-out-of-bounds write 재검출)
-- target-equivalent Linux 6.8.12 `struct pipe_buffer` layout compiler extraction: PASS
-  (40 bytes; `page=0`, `offset=8`, `len=12`, `ops=16`, `flags=24`, `private=32`)
-- Stage 2 pipe-entry payload generator 동적·정적 `-Wall -Wextra -Werror` build: PASS
-- Stage 2 pipe-entry payload generator 2048-byte 길이, zero prefix/tail, little-endian
-  field packing과 `page=0`, `ops=0`, 음수 주소, offset 4095 이상, 숫자가 아닌 입력 거부:
-  PASS
-- layout verifier Linux 6.8.12 source/output, matching `source` link 및 target `.config`
-  SHA-256 불일치 거부: PASS
-- 생성 pipe-entry payload를 Raw Gadget 파일 입력으로 보낸 Linux 6.8.12 KASAN QEMU
-  Stage 2 ioctl: PASS (2048-byte 반환 및 기존 allocation-boundary report). 이 시험은
-  live entry lifetime과 page-cache write를 검증하지 않는다.
-- Stage 2의 조작된 pipe metadata 및 page primitive: NOT TESTED
-- SUID helper file-backed page pointer leak: UNVERIFIED CANDIDATE (target-equivalent
-  QEMU 5/5에서 canonical vmemmap 후보를 관찰했으나 page identity 미검증)
-- source fd를 닫은 live helper pipe entry reference 유지: PASS (10초 후 byte 동일)
-- `page_cache_pipe_buf_ops`와 `PIPE_BUF_FLAG_CAN_MERGE` page-cache write: NOT TESTED
-- 변조된 SUID helper를 통한 UID 0 및 test flag 획득: NOT TESTED
-- 두 configuration을 이용한 단일 enumeration leak: NOT TESTED
-- 참가자용 built-in target 및 release bundle: NOT BUILT
+### PASS
+
+- 기존 target-equivalent QEMU full chain 10/10
+- current Linux 6.8.12 `bzImage` rebuild
+- current kernel + hardware initramfs boot smoke
+- RP2040 firmware ARM build
+- descriptor 및 Stage 2 payload host protocol self-test
+- hardware harness `-Wall -Wextra -Werror` static build
+- build/init shell script `sh -n`
+- bundle `SHA256SUMS` 전체 검증
+- 참가자 Ubuntu 24.04.4 initramfs boot, UID/GID 65534와 9p `/work` mount
+- 참가자 firmware template ARM/UF2 build
+- 참가자 폴더에 내부 exploit/harness가 없음을 archive listing으로 확인
+- `git diff --check`, `git diff --cached --check`
+
+### 미검증 또는 제한
+
+- 실제 RP2040 USB enumeration 및 full chain은 NOT TESTED다.
+- current kernel의 physical USB path와 three-reconnect runtime은 보드가 필요하다.
+- current kernel source로 기존 Raw Gadget full chain 10/10을 다시 돌리지는 않았다.
+- 참가자 QEMU 실행 명령은 작성했지만 KVM 및 physical USB passthrough는 미검증이다.
+- 실제 flag 주입과 현장 ticket 운영 절차는 미확정이다.
+
+## Git 상태
+
+- Branch: `main`
+- 이 문서를 포함하는 checkpoint에 full-chain, firmware, bundle build와 문서 변경을
+  함께 기록한다.
+- 생성된 `dist/`와 `firmware/build/`은 `.gitignore` 대상이다.
+- `participant-release/`의 pre-release 배포 파일과 바이너리는 이번 요청에 따라 추적한다.
+- 커밋 전 독립 Codex read-only review에서 신규 actionable finding 0건을 확인했다.
