@@ -9,6 +9,8 @@
 
 | 범위 | 상태 | 근거와 한계 |
 |---|---|---|
+| 현재 개발 방향 | DIRECTION 2 | QEMU-only software edition을 먼저 완성하고 팀원 풀이 진행 |
+| 방향 2 trusted USB emulator 및 배포본 | NOT IMPLEMENTED | 다음 세션의 현재 작업 |
 | 문제 설계 및 QEMU exploit chain | PASS | Linux 6.8.12 target-equivalent cold boot 10/10 |
 | 현재 kernel source | BUILD PASS | review fix와 hardware stage ioctl을 포함해 `bzImage` 재빌드 |
 | hardware validation initramfs | BOOT PASS | 1 vCPU, 2 GiB QEMU에서 UID 65534 harness 시작 확인 |
@@ -16,9 +18,27 @@
 | hardware-validation bundle | BUILT | 로컬 `dist/hardware-validation/`, artifact hash 검증 통과 |
 | 참가자 pre-release | BUILD/BOOT PASS | `participant-release/`, Ubuntu 24.04.4, UID 65534 shell 확인 |
 | 실제 RP2040 full chain | NOT TESTED | 보드 연결 후 확인 필요 |
-| 참가자 최종 배포본 | NOT FINAL | 실제 장치와 USB passthrough 결과 미확정 |
+| 참가자 최종 배포본 | NOT FINAL | 현재 폴더는 방향 1 RP2040 pre-release |
 
-현재 단계는 **검증용 펌웨어·커널 파일 생성 완료, 실제 RP2040 검증 대기**다.
+현재 단계는 **방향 2 QEMU-only 배포본 구현 시작 전**이다. RP2040 hardware edition은
+방향 1로 보존하지만 당장 완료 조건으로 삼지 않는다.
+
+## 2026-09-06 — QEMU-only 우선 개발 결정
+
+- 방향 2를 먼저 완성해 팀원이 hardware 없이 participant archive만으로 풀도록 한다.
+- 방향 1은 guest exploit과 RP2040 firmware를 함께 제출하는 hardware edition으로
+  보존한다.
+- 방향 2에서는 organizer-owned trusted USB emulator daemon만 root로 실행한다.
+  daemon은 disconnected 상태로 기다리며 UID 65534 participant exploit의 readiness
+  signal 뒤 USB를 연결한다. 참가자는 guest exploit만 제출한다.
+- participant release에는 `KAPO{test_flag}`만 두고 실제 flag image는 운영진만
+  보관한다.
+- 참가자 exploit은 QEMU의 `/work`로 전달하며 host에서는 실행하지 않는다.
+- 기존 Stage 1 leak, Stage 2 overflow와 page-cache overwrite chain은 변경하지 않는다.
+- trusted emulator는 USB transport와 payload만 담당하며 helper/seq/pipe grooming은
+  전부 participant exploit이 수행한다.
+- 현재 `participant-release/`와 hardware bundle은 방향 1 산출물이므로 삭제하거나
+  완료로 재표시하지 않는다.
 
 ## 2026-09-06 — 하드웨어 검증 파일 생성
 
@@ -55,16 +75,24 @@
 
 ## 남은 작업
 
-1. `docs/HARDWARE-VALIDATION.md`에 따라 UF2를 실제 RP2040 Zero에 flash한다.
-2. supplied kernel/initramfs에 보드를 passthrough하고 enumeration, 두 leak, Stage 2,
-   UID 0, `KAPO{test_flag}`를 확인한다.
-3. 첫 성공 뒤 동일 조건에서 반복 실행해 안정성을 측정하고 USB passthrough 명령을
-   문서에 고정한다.
-4. 실제 장치 결과를 반영한 뒤 USB passthrough 절차와 실제 flag 주입 절차를 고정하고
-   `participant-release/README.md`의 pre-release 표시를 제거한다.
+1. 기존 Raw Gadget 코드에서 USB transport, descriptor와 payload 처리만 재사용해
+   organizer-owned trusted USB emulator가 세 모드를 한 프로세스에서 제공하도록 한다.
+   기존 gadget-side helper/seq/pipe grooming 코드는 재사용하지 않는다.
+2. emulator를 root로 먼저 실행한 뒤 UID 65534 participant shell/exploit을 시작하는
+   방향 2 initramfs를 만든다. daemon은 disconnected 상태로 기다리고 participant
+   exploit이 grooming 뒤 readiness signal을 보내 첫 enumeration을 시작한다.
+3. `/work`에는 participant exploit만 전달하고 emulator 교체나 `/dev/raw-gadget`
+   직접 접근이 ticket 신뢰 경계를 우회하지 않는지 확인한다.
+4. RP2040 firmware와 hardware 문서는 보존하되 방향 2 participant archive에서
+   firmware, USB passthrough 의존성을 제거한다.
+5. final symbol exposure 정책을 적용하고 archive에 internal material과 실제 flag가
+   없는지 검사한다.
+6. 방향 2 cold boot full chain 10/10 뒤 팀원에게 participant archive만 전달해
+   black-box 풀이를 요청한다.
+7. 팀원 결과를 반영한 뒤 방향 1 hardware edition 진행 여부를 결정한다.
 
-single-enumeration dual configuration은 선택적 최적화이며 현재 three-reconnect 방식의
-완료 조건이 아니다.
+single-enumeration dual configuration과 physical RP2040 검증은 방향 1의 후속 작업이며
+현재 방향 2 완료 조건이 아니다.
 
 ## 검증 기록
 
@@ -85,6 +113,8 @@ single-enumeration dual configuration은 선택적 최적화이며 현재 three-
 
 ### 미검증 또는 제한
 
+- 방향 2 trusted USB emulator, initramfs와 participant archive는 NOT IMPLEMENTED다.
+- 팀원 black-box 풀이는 NOT TESTED다.
 - 실제 RP2040 USB enumeration 및 full chain은 NOT TESTED다.
 - current kernel의 physical USB path와 three-reconnect runtime은 보드가 필요하다.
 - current kernel source로 기존 Raw Gadget full chain 10/10을 다시 돌리지는 않았다.
@@ -98,4 +128,3 @@ single-enumeration dual configuration은 선택적 최적화이며 현재 three-
   함께 기록한다.
 - 생성된 `dist/`와 `firmware/build/`은 `.gitignore` 대상이다.
 - `participant-release/`의 pre-release 배포 파일과 바이너리는 이번 요청에 따라 추적한다.
-- 커밋 전 독립 Codex read-only review에서 신규 actionable finding 0건을 확인했다.

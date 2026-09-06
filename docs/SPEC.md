@@ -3,20 +3,106 @@
 > 이 문서는 출제자 및 개발 에이전트 전용이다.
 > 참가자 배포본에 포함하지 않는다.
 
+## 0. 개발 방향
+
+2026-09-06에 다음 두 방향을 분리했다. **방향 2를 먼저 완성해 팀원에게
+black-box 풀이를 요청하며, 방향 1은 폐기하지 않고 후속 hardware edition으로
+보존한다.** 아래의 RP2040 관련 기존 설계와 검증 기록은 방향 1의 기준으로 계속
+유효하다.
+
+### 방향 1 — RP2040 hardware edition (보존)
+
+- 참가자는 guest exploit과 RP2040 firmware를 함께 작성한다.
+- 로컬에서 `KAPO{test_flag}`를 획득한 뒤 firmware/source, guest exploit/source,
+  실행 절차와 hash를 ticket으로 제출한다.
+- 운영진은 실제 flag가 든 disposable QEMU guest에서 참가자 exploit을 비특권으로
+  먼저 실행하고, 참가자가 가져온 RP2040을 연결해 검증한다.
+- 한 번 연결한 뒤 guest의 `KAPO_NEXT_STAGE` ioctl과 vendor request `0x5c`로
+  helper leak, seq leak, Stage 2 모드를 자동 전환한다. GPIO나 수동 reset은 현재
+  필수 설계가 아니다.
+- 현재 상태는 firmware build와 host protocol self-test까지 PASS이며 physical
+  RP2040 full chain은 NOT TESTED다.
+
+### 방향 2 — QEMU-only software edition (현재 우선순위)
+
+- 참가자 배포와 ticket 검증은 동일한 QEMU target을 사용한다.
+- 운영진이 제공하는 **trusted USB emulator** daemon이 guest 안에서 root로 자동
+  시작되지만 처음에는 USB를 연결하지 않고 대기한다. UID 65534 participant exploit이
+  helper-page grooming을 마친 뒤 readiness signal을 보내면 `dummy_hcd`와 Raw Gadget을
+  통해 첫 모드를 연결한다.
+- helper leak 뒤 participant exploit은 `KAPO_NEXT_STAGE`로 장치를 disconnect하고,
+  seq grooming을 끝낸 뒤 readiness signal을 보내 seq mode를 reconnect한다. seq leak
+  뒤에도 `KAPO_NEXT_STAGE`, disconnect, readiness signal 순으로 Stage 2 mode를 reconnect한다.
+  단, Stage 2의 live pipe grooming과 hole 생성은 1024-byte configuration allocation이
+  끝나고 driver가 bind된 **이후**, 취약한 ioctl을 호출하기 직전에 수행한다.
+- 참가자는 USB emulator나 root process를 제출하지 않고, UID 65534에서 실행할
+  guest exploit binary/source만 작성한다.
+- participant release에는 `KAPO{test_flag}`만 둔다. 실제 flag가 든 image는
+  운영진만 보관하며 참가자에게 파일로 전달하지 않는다.
+- 참가자 exploit은 host의 submission directory에서 QEMU의 `/work`로 전달한다.
+  참가자 파일은 host에서 실행하지 않는다.
+- ticket에서는 organizer-owned emulator와 원본 kernel/rootfs만 사용하고,
+  참가자 exploit을 비특권 guest process로 실행한다.
+- participant-controlled emulator를 실제 flag가 있는 guest에서 root로 실행하지
+  않는다. 그렇게 하면 exploit 없이 `/flag`를 읽을 수 있어 신뢰 경계가 깨진다.
+- trusted emulator는 descriptor, disconnect/reconnect, participant가 ioctl 인자로 계산하고
+  custom driver가 little-endian으로 직렬화·전송한 transfer context의 역직렬화와 그 값에
+  따른 bulk payload 생성만 담당한다.
+  helper/seq grooming, leak 판독, context 계산, pipe spray와 최종 trigger는 모두 UID
+  65534 participant exploit이 담당한다.
+- 구현 상태: **Confirmed design, NOT IMPLEMENTED**. 현재 `participant-release/`는
+  RP2040 pre-release이므로 방향 2의 완성 배포본이 아니다.
+
+### 두 방향이 공유하는 고정 exploit chain
+
+- Stage 1 취약점은 `usb/core/message.c`와 `usb/core/config.c`의 short
+  configuration uninitialized heap disclosure다.
+- Stage 2 취약점은 `usb/class/customdriver.c`의 `KAPO_FETCH_RECORDS` ioctl에서
+  1024-byte allocation에 2048-byte bulk data를 받는 heap overflow다.
+- `custom_id_table`이 `0xff/0x42/0x01` interface를 match하고,
+  `custom_probe()`는 bulk IN endpoint를 확인한 뒤 `/dev/kapo_ctf0`을 등록한다.
+  Stage 2 overflow 자체는 `probe()`가 아니라 ioctl이 trigger한다.
+- 최종 primitive는 adjacent live `pipe_buffer` 재구성, SUID helper page-cache
+  overwrite, UID 0과 `/flag` 획득으로 유지한다.
+
+### 방향 2 완료 기준
+
+- trusted USB emulator daemon이 boot 때 자동으로 시작해 disconnected 상태로
+  대기하고, participant exploit의 readiness signal 뒤 세 모드를 안정적으로 제공한다.
+- emulator binary에는 helper/seq/pipe grooming이나 flag 접근 기능이 없고 모든
+  exploit primitive 준비는 UID 65534 participant exploit이 수행한다.
+- participant exploit은 `/work`에서 UID 65534로 실행되며 organizer harness나
+  solve 없이 `KAPO{test_flag}`를 획득할 수 있다.
+- cold boot 10/10에서 full chain이 성공한다.
+- 배포 archive에 이 문서, `STATUS.md`, `HANDOFF.md`, organizer exploit/harness,
+  실제 flag가 포함되지 않는다.
+- final release에서 `System.map` 배포를 중단하고 `vmlinux` ELF symbol/debug table을
+  strip하며 `CONFIG_KALLSYMS`, `CONFIG_KALLSYMS_ALL`, 노골적인 custom symbol과
+  log string 노출을 재검토한다. 이 hardening은 아직 NOT IMPLEMENTED다.
+- 내부 검증 후 팀원이 participant archive만 받아 hardware 없이 독립적으로
+  풀이하고 난이도와 누락 파일을 보고한다.
+
 ## 1. 문제 개요
 
 - 문제 이름: TBD
 - 분야: Pwn / Kernel / Hardware
 - 목표 난이도: 상
 - 실행 환경: Ubuntu 24.04 + Linux Kernel 6.8
-- 공격 입력 장치: RP2040 Zero
+- 공격 입력 장치: 방향 1은 RP2040 Zero, 방향 2는 organizer-owned trusted Raw Gadget
+  emulator
 - 플래그 형식: `KAPO{...}`
 
 ### 한 줄 설명
 
-RP2040으로 제작한 USB 장치를 이용해 취약한 Linux USB 커널 드라이버를 공격하고, 최종적으로 플래그를 읽는 문제다.
+방향 1에서는 RP2040, 방향 2에서는 trusted Raw Gadget emulator가 제공하는 USB 입력으로
+취약한 Linux USB 커널 드라이버를 공격하고 최종적으로 플래그를 읽는다.
 
-이 문제는 Linux USB core의 configuration descriptor 파싱 취약점과 CTF용 custom USB driver의 취약점을 순차적으로 연결한다. RP2040이 조작된 configuration descriptor를 전달하면 `usb/core/config.c`에서 첫 번째 primitive가 발생한다. 이후 USB enumeration이 계속 진행되고, 특정 device/interface 조건이 충족되면 custom driver의 `probe()`가 실행되어 두 번째 primitive로 연결된다.
+이 문제는 Linux USB core의 short configuration 처리 취약점과 CTF용 custom USB
+driver의 취약점을 순차적으로 연결한다. `usb/core/message.c`가 광고 길이의 configuration
+buffer를 초기화하지 않고, `usb/core/config.c`가 실제 수신 길이보다 큰 광고 길이를 raw
+descriptor reader에 보존하는 조합으로 첫 번째 primitive가 발생한다. parser 자체에는
+실제 수신 길이만 전달된다. 이후 USB enumeration이 계속되고 custom driver의 `probe()`가
+device node를 등록한 뒤 participant exploit의 ioctl이 두 번째 primitive를 trigger한다.
 
 ## 2. 출제 의도
 이 문제를 통해 참가자가 경험해야 하는 핵심 내용은 다음과 같다
@@ -25,7 +111,8 @@ RP2040으로 제작한 USB 장치를 이용해 취약한 Linux USB 커널 드라
 - `probe()`와 `device_add()` 및 USB 요청 처리 과정
 - 커널 드라이버에서 발생하는 메모리 취약점
 - 제한된 primitive를 exploit chain으로 발전시키는 과정
-- RP2040 펌웨어를 이용한 공격 입력 생성
+- 방향 1에서는 RP2040 펌웨어, 방향 2에서는 제공된 USB emulator protocol을 이용한
+  공격 입력 제어
 
 ## 3. 문제 운영 및 검증 방식
 
@@ -42,22 +129,25 @@ RP2040으로 제작한 USB 장치를 이용해 취약한 Linux USB 커널 드라
 - 실행 방식: VM
 - initramfs 사용 여부: TBD
 
-### USB device
+### USB input device
 
-- Board: RP2040 Zero
+- 방향 1: RP2040 Zero
+- 방향 2: organizer-owned trusted Raw Gadget emulator와 `dummy_hcd`
 
 ### Kernel code
 
 - 원본 USB 코드: `usb/`
 - custom driver: `usb/class/customdriver.c`
 
-## 5. 현재 확정된 단계
+## 5. 현재 확정된 공통 단계
 
-- 공격 입력은 RP2040 Zero에서 전달된다.
+- 공격 입력은 방향 1의 RP2040 Zero 또는 방향 2의 organizer-owned trusted emulator가
+  USB transport로 전달한다.
 - Linux USB core의 configuration descriptor 처리 경로에 Stage 1 취약점을 구현한다.
 - 첫 번째 취약점은 custom driver의 `probe()` 이전에 발생한다.
 - 특정 장치/interface/descriptor 조건을 만족하면 custom driver가 매칭된다.
-- `probe()`에서 추가 primitive로 연결한다.
+- `probe()`는 device node를 등록하고 participant exploit의 ioctl이 추가 primitive를
+  trigger한다.
 - 최종 목표는 커널 권한 획득 및 flag 읽기다.
 
 ## 6. Exploit Chain
@@ -75,8 +165,8 @@ RP2040으로 제작한 USB 장치를 이용해 취약한 Linux USB 커널 드라
 - 입력 조건:
   - 첫 configuration header의 `wTotalLength`는 공격자가 원하는 kmalloc
     cache 크기를 광고한다.
-  - 두 번째 `GET_DESCRIPTOR(CONFIGURATION)` 응답은 정상 configuration 및
-    interface descriptor까지만 반환하는 short response다.
+  - 두 번째 `GET_DESCRIPTOR(CONFIGURATION)` 응답은 정상 configuration, interface 및
+    bulk IN endpoint descriptor까지만 반환하는 25-byte short response다.
 - 데이터 흐름:
   - backing buffer는 광고된 길이로 `kmalloc(..., GFP_KERNEL_ACCOUNT)` 된다.
     이 flag는 userspace pipe ring의 `GFP_KERNEL_ACCOUNT` allocation과 같은
@@ -117,7 +207,8 @@ RP2040으로 제작한 USB 장치를 이용해 취약한 Linux USB 커널 드라
 
 ### Stage 2 — Custom driver
 
-- 진입점: `custom_probe()`
+- driver binding 진입점: `custom_probe()`
+- 취약점 trigger: `/dev/kapo_ctf0`의 `KAPO_FETCH_RECORDS` ioctl
 - 매칭 조건: vendor-specific interface class `0xff`, subclass `0x42`,
   protocol `0x01`
 - protocol:
@@ -276,7 +367,10 @@ allocation의 첫 1024 bytes와 entry 뒤 tail을 zero로 유지하고 byte 1024
   안정화 후 `bNumConfigurations = 2`로 두 short configuration을 한 번의 enumeration에
   제공하는 방식은 선택적으로 시험할 수 있다. 이 단일 연결 방식은 Unverified다.
 
-## 9. 참가자 배포 및 검증 계획
+## 9. 방향 1 참가자 배포 및 검증 계획
+
+이 절은 RP2040 hardware edition 전용이다. 현재 우선순위인 방향 2의 배포,
+신뢰 경계와 완료 기준은 §0을 따른다.
 
 ### 배포 방향
 
@@ -305,7 +399,7 @@ allocation의 첫 1024 bytes와 entry 뒤 tail을 zero로 유지하고 byte 1024
 - KASAN/SLUB 내부 검증 로그
 - 실제 flag, 운영 이미지, 자격 증명
 
-### ticket 검증 입력
+### 방향 1 ticket 검증 입력
 
 참가자는 RP2040 firmware image와 source, guest exploit binary와 source, build/run 절차,
 각 파일의 hash를 제출한다. 운영진은 disposable 검증 VM에서 동일한 kernel과 rootfs를

@@ -97,6 +97,21 @@ USB 처리 경로와 CTF용 custom driver를 연결해 재현 가능한 커널 C
 - merge와 pull request 생성은 사용자의 명시적 요청 없이 수행하지 않는다.
 - 다른 기기에서 작업을 시작할 때 최신 원격 상태와 로컬 변경의 차이를 먼저 확인한다.
 
+### Bounded finish and review
+
+- 사용자가 현재 작업의 commit과 push를 이미 요청했다면 완료 시 다시 확인하지 않고
+  검증 직후 `scripts/session-finish.sh`를 한 번 실행한다.
+- 독립 검토에는 현재 diff, 상태 문서와 변경 주장을 판정하는 데 필요한 구현만 전달한다.
+  저장소 전체 재탐색, 스킬 재독, 전체 빌드는 검토 근거에 필요할 때만 수행한다.
+- 자동 독립 검토는 작업 단위당 최대 2회다. 첫 검토의 발견을 수정하면 한 번만
+  재검토한다. 재검토에서 새 쟁점이 나오면 자동 수정·재검토 루프를 중단하고 사용자에게
+  쟁점과 현재 diff를 보고한다.
+- 문서 전용 변경은 `git diff --check`와 문서-구현 대조만 수행한다. 코드·artifact가
+  바뀌지 않았다면 kernel build, QEMU boot와 hardware test를 반복하지 않는다.
+- 검토 통과 뒤 review 결과를 기록하려고 상태 문서를 다시 수정하지 않는다. 검토 결과는
+  commit/push 완료 보고에 남겨 검토 후 diff 변경을 피한다.
+- 종료 보고는 변경, 실행한 검증, 미검증 항목, 다음 작업만 간단히 적는다.
+
 ## Desktop-notebook switching protocol
 
 - 동시에 두 기기에서 작업하지 않는다. 한 기기의 변경을 commit하고 push한 뒤 다른
@@ -137,6 +152,9 @@ git config --local kapo.syncWorkTree "C:/path/to/usb-kernel-ctf"
 에이전트는 작업이 성공적으로 완료되고 검증됐으며 작업 트리에 관련 없는 변경이 없을 때
 이 스크립트를 실행한다. 안전 조건을 만족하지 못하면 push하지 않고 이유와 남은 변경을
 보고한다.
+
+사용자가 해당 작업의 commit/push를 이미 승인했다면 이 단계에서 추가 승인을 기다리지
+않는다.
 
 ```bash
 ./scripts/session-finish.sh \
