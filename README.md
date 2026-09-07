@@ -8,12 +8,14 @@ USB core의 Stage 1 heap disclosure와 CTF용 custom driver의 Stage 2 heap over
 
 - 현재 우선 개발 방향: QEMU-only software edition
 - 후속 보존 방향: RP2040 hardware edition
-- QEMU-only 배포 후보 `testkernelctf/`와 `testkernelctf.tar.xz`: HARDENED RC
+- QEMU-only 배포 후보 `testkernelctf/`와 `testkernelctf.tar.xz`: PARTIAL RC
 - 현재 재현성 재빌드 artifact cold boot full chain 및 test flag: TCG PASS 5/5
 - Jeopardy localhost TCP disposable QEMU와 외부 test flag 주입 full chain: PASS
 - 힌트 축소 배포본 독립 AI black-box 풀이: PASS 3/3, median 13분 43초
 - helper-stage pipe resize shortcut: 기존 exploit 차단 3/3
 - 최종 강화본 fresh AI black-box 의도 풀이: PASS, 19분 50초, 8/10
+- root-only guest emulator와 16-byte Stage 2 partial overwrite: TCG PASS 5/5
+- partial-overwrite fresh AI black-box 풀이: 30분 내 0/3, partial 구조 복원 3/3
 - Target-equivalent Linux 6.8.12 QEMU full chain: PASS 10/10
 - 비특권 UID 65534에서 UID 0 및 `KAPO{test_flag}` 획득: PASS 10/10
 - 현재 kernel source rebuild 및 hardware initramfs boot smoke: PASS
@@ -29,6 +31,12 @@ TCG cold boot 5/5로 확인했다. 이전 힌트 축소 archive를 푼 독립 AI
 helper-stage pipe resize 우회는 강화 kernel에서 차단했으며, 강화 archive의 신규 독립
 black-box 풀이는 의도한 helper page-only leak, seq KASLR leak, exact page-cache ops와
 Stage 2 overflow를 사용해 19분 50초에 성공했다.
+
+현재 후보는 guest 안의 emulator를 root-only로 제한하고 Stage 2가 인접
+`pipe_buffer`의 `page/offset/len` 16 bytes만 덮도록 축소했다. local archive 자체를 가진
+참가자는 initramfs를 추출할 수 있으므로 emulator bytes를 완전히 숨기는 구성은 아니다.
+독립 archive-only AI 세션 3개는 partial overwrite 구조와 최종 목표를 복원했지만
+971초, 1,637초, 1,787초 cutoff 내에 guest flag를 얻지 못했다.
 
 `dist/hardware-validation/`에 `bzImage`, `vmlinux`, `System.map`, kernel config,
 test initramfs와 `kapo-rp2040.uf2`를 생성했다. 이 디렉터리는 Git에 포함하지 않는 로컬

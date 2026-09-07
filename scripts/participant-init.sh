@@ -2,7 +2,7 @@
 
 export PATH=/usr/sbin:/usr/bin:/sbin:/bin
 
-/bin/busybox mount -t proc proc /proc
+/bin/busybox mount -t proc -o hidepid=2 proc /proc
 /bin/busybox mount -t sysfs sysfs /sys
 /bin/busybox mount -t devtmpfs devtmpfs /dev
 /bin/busybox mkdir -p /tmp /work

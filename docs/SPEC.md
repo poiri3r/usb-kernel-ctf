@@ -51,12 +51,20 @@ black-box 풀이를 요청하며, 방향 1은 폐기하지 않고 후속 hardwar
   따른 bulk payload 생성만 담당한다.
   helper/seq grooming, leak 판독, context 계산, pipe spray와 최종 trigger는 모두 UID
   65534 participant exploit이 담당한다.
+- guest의 emulator executable은 root-owned mode `0700`이고 procfs는 `hidepid=2`로
+  mount한다. 이는 UID 65534 guest process의 direct read와 root-process inspection을
+  막는다. 로컬 participant archive 소유자는 initramfs 자체를 추출할 수 있으므로 emulator
+  bytes를 암호학적으로 숨기는 경계는 아니며, 실제 서버 image 비공개 경계와 구분한다.
 - 구현 상태: **Release candidate implemented and runtime validated**.
   `testkernelctf/`와 `testkernelctf.tar.xz`는 방향 2 배포 후보이며, 재현성 재빌드
   artifact의 TCG cold boot full chain은 5/5다. heap 준비와 live pipe timing 힌트를
   제거한 이전 archive의 독립 AI black-box 풀이는 3/3 성공했다.
-  shortcut 차단 최종 archive의 fresh participant-only 풀이도 1,190초에 의도 체인으로
-  test flag를 획득했다.
+  full-entry overwrite 강화 archive의 fresh participant-only 풀이도 1,190초에 의도
+  체인으로 test flag를 획득했다. 현재 QEMU-only Stage 2를 16-byte partial overwrite로
+  축소한 후보는 organizer TCG cold boot 5/5를 통과했다. archive-only 독립
+  AI 풀이 3개는 partial overwrite 구조와 최종 page-cache 목표를 복원했지만
+  971초, 1,637초, 1,787초
+  cutoff 내 guest flag를 얻지 못했다.
   `participant-release/`는 방향 1 RP2040 pre-release로 보존한다.
 - Closed unintended shortcut: 세 독립 풀이 모두 helper stage에서 resize로 해제한 live
   pipe ring의 helper `struct page *`와 runtime `page_cache_pipe_buf_ops`를 함께 leak해
@@ -73,8 +81,10 @@ black-box 풀이를 요청하며, 방향 1은 폐기하지 않고 후속 hardwar
 
 - Stage 1 취약점은 `usb/core/message.c`와 `usb/core/config.c`의 short
   configuration uninitialized heap disclosure다.
-- Stage 2 취약점은 `usb/class/customdriver.c`의 `KAPO_FETCH_RECORDS` ioctl에서
-  1024-byte allocation에 2048-byte bulk data를 받는 heap overflow다.
+- Stage 2 취약점은 `usb/class/customdriver.c`의 `KAPO_FETCH_RECORDS` ioctl에서 allocation
+  element 크기를 잘못 계산해 bulk data가 kmalloc object 경계를 넘는 heap overflow다.
+  방향 1은 기존 128-record full-entry overwrite를 보존하고, 방향 2는 65 records로
+  kmalloc-1k 경계를 16 bytes만 넘는다.
 - `custom_id_table`이 `0xff/0x42/0x01` interface를 match하고,
   `custom_probe()`는 bulk IN endpoint를 확인한 뒤 `/dev/kapo_ctf0`을 등록한다.
   Stage 2 overflow 자체는 `probe()`가 아니라 ioctl이 trigger한다.
@@ -248,9 +258,10 @@ Jeopardy scoreboard에 제출한다.
     할당한다.
   - bulk IN endpoint에서는 실제 16-byte record 배열 크기로
     `record_count * sizeof(struct kapo_record)` 바이트를 같은 buffer로 수신한다.
-  - `record_count = 128`이면 allocation request는 1024바이트, receive length는
-    2048바이트다. 기본 16-entry pipe ring의 640-byte request와 같은 kmalloc-1k
-    cache에 들어간다.
+  - 방향 1의 `record_count = 128`은 1024-byte request와 2048-byte receive를 유지한다.
+  - 방향 2 trusted emulator의 `record_count = 65`는 520-byte request가 kmalloc-1k
+    object를 받고 1040 bytes를 수신한다. 따라서 다음 kmalloc-1k object의 처음 16 bytes,
+    즉 `pipe_buffer.page`, `offset`, `len`만 overwrite한다.
 - trigger timing:
   - `probe()`는 bulk endpoint를 확인하고 userspace device node만 등록한다.
   - 참가자는 Stage 1 sysfs leak을 읽어 KASLR slide와 `struct page *`를 얻는다.
@@ -263,15 +274,24 @@ Jeopardy scoreboard에 제출한다.
   - 최종 대상으로 사용할 SUID helper의 file-backed page를 pipe entry에 넣고,
     해제된 ring에서 해당 `struct page *`를 Stage 1로 유출한다. helper 전용
     grooming은 target-equivalent QEMU에서 확인했다.
-  - overflow payload는 인접 live `pipe_buffer`의 `page`, `offset`, `len`, `ops`,
-    `flags`, `private`를 일관된 값으로 재구성한다.
-  - `PIPE_BUF_FLAG_CAN_MERGE`를 설정한 뒤 pipe write를 외부 trigger로 사용해
-    SUID helper의 page cache를 덮어쓴다.
+  - 방향 2 participant는 1-byte anonymous pipe buffer를 live target으로 준비한다.
+    partial overflow는 `page`를 leaked helper page로, `offset`을 0으로, `len`을 helper
+    patch offset으로 바꾼다. 기존 anonymous `ops`, `PIPE_BUF_FLAG_CAN_MERGE`, `private`는
+    overwrite 범위 밖에 있어 반드시 live entry에서 보존해야 한다.
+  - driver의 exact runtime `page_cache_pipe_buf_ops` context 검증은 seq KASLR leak을
+    계속 요구하지만, QEMU partial payload가 실제 live entry에 기록하는 ops는 보존된
+    `anon_pipe_buf_ops`다.
+  - 이후 pipe write를 외부 trigger로 사용해 SUID helper의 page cache를 덮어쓴다.
 - 검증 분리:
   - KASAN build에서는 1024-byte allocation 경계를 넘는 bulk receive report를 확인한다.
   - SLUB redzone 때문에 실제 인접 object 도달이 달라질 수 있으므로 adjacency와 pipe
     primitive는 debug redzone 없는 target-equivalent build에서 별도로 확인한다.
 - 현재 검증 수준:
+  - 방향 2 `record_count = 65`, 520-byte request, 1040-byte receive와 16-byte adjacent
+    overwrite: PASS.
+  - 방향 2 partial overwrite가 live anonymous entry의 `ops/flags/private`를 보존한 채
+    helper page-cache write, UID 0, test flag를 달성: TCG cold boot 5/5 PASS.
+  - 이전 full-entry exploit은 partial 후보에서 1040-byte receive 뒤 flag 획득 실패: PASS.
   - 단서 완화 후 object에서 `record_count = 128`의 1024-byte allocation과
     2048-byte receive 길이 유지: PASS
   - 단서 완화 전 ioctl을 통한 외부 trigger와 2048-byte 반환: PASS
@@ -334,6 +354,9 @@ Jeopardy scoreboard에 제출한다.
   Stage 2 bulk payload에 반영할 수 있다.
 - [x] `page_cache_pipe_buf_ops`와 `PIPE_BUF_FLAG_CAN_MERGE`로 재구성한 pipe entry가
   helper의 page cache를 덮어쓴다.
+- [x] QEMU-only 16-byte overflow로 `page/offset/len`만 바꾸고 live anonymous entry의
+  `anon_pipe_buf_ops`, `PIPE_BUF_FLAG_CAN_MERGE`, `private`를 보존해 helper page cache를
+  덮어쓴다. cold boot 5/5로 확인했다.
 - [x] 변조한 SUID helper 실행으로 UID 0을 획득하고 `KAPO{test_flag}`를 읽는다.
 - [ ] 32-byte와 1024-byte configuration을 한 장치의 두 configuration으로 제공해
   한 번의 연결에서 두 leak을 얻을 수 있다.
@@ -356,7 +379,8 @@ Jeopardy scoreboard에 제출한다.
 
 ### 의도된 pipe metadata
 
-Stage 2 overflow로 인접 live pipe ring의 활성 entry를 다음 의미로 재구성한다. target
+방향 1의 Stage 2 overflow는 인접 live pipe ring의 활성 entry 전체를 다음 의미로
+재구성한다. target
 Linux 6.8.12 build에서 `struct pipe_buffer` 크기는 40 bytes이며 field offset은
 `page=0`, `offset=8`, `len=12`, `ops=16`, `flags=24`, `private=32`로 재현 가능하게
 확인했다. `scripts/verify-pipe-buffer-layout.sh <linux-source> <linux-output>`는 target
@@ -382,6 +406,19 @@ allocation의 첫 1024 bytes와 entry 뒤 tail을 zero로 유지하고 byte 1024
 전달한다. full-chain harness는 같은 layout을 USB device에서 구성하며 live entry
 재구성과 page-cache write를 10/10회 확인했다. `len=1`이 page를 넘지 않도록 offset을
 0..4094로 제한한다.
+
+방향 2 QEMU-only partial overwrite는 다음 16 bytes만 제공한다.
+
+```text
+page   = Stage 1에서 유출한 SUID helper page의 struct page 주소
+offset = 0
+len    = helper page 안의 patch offset
+```
+
+대상 live entry는 participant가 1 byte를 쓴 anonymous pipe buffer여야 한다. 따라서
+byte 16 이후의 `anon_pipe_buf_ops`, `PIPE_BUF_FLAG_CAN_MERGE`, `private = 0`가 기존
+entry에서 보존된다. transfer context의 runtime `page_cache_pipe_buf_ops`는 driver의
+KASLR 검증에 사용되지만 partial USB payload에는 복사되지 않는다.
 
 ### Stage 1 leak 구성
 

@@ -18,13 +18,46 @@
 | hardware-validation bundle | BUILT | 로컬 `dist/hardware-validation/`, artifact hash 검증 통과 |
 | 참가자 pre-release | BUILD/BOOT PASS | `participant-release/`, Ubuntu 24.04.4, UID 65534 shell 확인 |
 | 실제 RP2040 full chain | NOT TESTED | 보드 연결 후 확인 필요 |
-| 참가자 배포 후보 | HARDENED RC | resize shortcut 차단 artifact, 의도 체인 TCG 5/5 |
+| 참가자 배포 후보 | PARTIAL RC | root-only guest daemon, 16-byte overwrite, TCG 5/5 |
 | 힌트 축소 독립 AI 풀이 | PASS 3/3 | 658초, 823초, 1,026초; median 823초 |
 | 알려진 resize shortcut | BLOCKED 3/3 | 기존 A/B/C exploit 모두 helper leak 단계 실패 |
 | 최종 강화본 fresh AI 풀이 | PASS | 1,190초, 의도 체인, shortcut 없음, 8/10 |
+| partial-overwrite fresh AI 풀이 | NOT SOLVED 0/3 | 971초, 1,637초, 1,787초 cutoff; partial 구조 복원 3/3 |
 
-현재 단계는 **강화 배포본의 추가 표본 수집과 최종 독립 검토**다.
+현재 단계는 **partial-overwrite 배포본의 최종 독립 검토와 push**다.
 RP2040 hardware edition은 방향 1로 보존하지만 현재 완료 조건은 아니다.
+
+## 2026-09-07 — root-only emulator와 Stage 2 partial overwrite
+
+- participant initramfs의 `/usr/sbin/kapo-usb-emulator`를 root-owned mode `0700`으로
+  변경하고 procfs를 `hidepid=2`로 mount했다. UID 65534 guest에서 executable read는
+  `Permission denied`였고 `ps`에 root daemon이 나타나지 않았다.
+- 이 경계는 guest UID 65534에만 적용된다. 공개 local archive 소유자는 initramfs를
+  host에서 추출할 수 있으므로 emulator bytes 자체를 숨기지는 못한다.
+- QEMU trusted emulator의 `record_count`를 65로 줄였다. driver는 520 bytes를 요청해
+  kmalloc-1k object를 받고 1040 bytes를 수신하므로, 다음 `pipe_buffer`의 첫 16 bytes인
+  `page/offset/len`만 overwrite한다.
+- participant는 live anonymous pipe entry의 `anon_pipe_buf_ops`,
+  `PIPE_BUF_FLAG_CAN_MERGE`, `private`를 보존하도록 target을 미리 구성해야 한다.
+- organizer harness cold boot 5/5에서 helper page leak, seq KASLR leak, 16-byte partial
+  overwrite, page-cache write, UID 0, `KAPO{test_flag}`, `FULL_CHAIN_PASS`: PASS.
+- 이전 full-entry fresh exploit은 새 후보에서 1040-byte receive까지 도달했지만 flag를
+  얻지 못했다.
+- 후보 archive SHA-256은
+  `d36521e3eb6b46f37d448b9a696e3c549f675c2dec62d2eea402e990ed2712ff`이다.
+- archive-only 독립 AI 풀이 3개는 971초, 1,637초, 1,787초에 종료했고
+  guest UID 65534 flag를 얻지 못했다. 모두 8–13분 내에 16-byte overwrite의
+  필드와 page-cache overwrite 최종 목표를 복원했지만, Stage 1의 helper-backed
+  `pipe_buffer` page/ops 재사용을 안정화하지 못했다.
+- 세 세션 모두 guest 내 mode `0700`/`hidepid=2`가 emulator 직접 분석을
+  막는 것을 확인했다. 다만 host에서 initramfs를 추출해 emulator와 공개
+  테스트 flag를 읽었으며, 이는 원격 운영 flag를 얻는 exploit로 판정하지 않았다.
+- 난이도 표본은 8.5/10(상급–매우 어려움)이며, 실제 성공 시간은 3개
+  모두 cutoff라서 현재 표본만으로 확정할 수 없다.
+- 독립 검토에서 QEMU partial harness 변경이 `--hardware` full-entry 경로에도
+  적용된 회귀를 찾았다. hardware는 기존 splice target/2048-byte 반환, QEMU는
+  anonymous target/1040-byte 반환으로 분기했고, 수정 후 QEMU cold boot full chain을
+  다시 통과했다.
 
 ## 2026-09-07 — helper-stage resize shortcut 차단
 
@@ -180,10 +213,9 @@ RP2040 hardware edition은 방향 1로 보존하지만 현재 완료 조건은 �
 
 ## 남은 작업
 
-1. 진행 중인 추가 fresh 세션 B의 성공 또는 30분 censored 결과를 기록한다.
-2. 최종 diff/source 검토에서 신규 쟁점 0을 확인한다.
-3. 운영 서버에서 실제 flag 파일로 initramfs를 빌드하고 systemd unit을 설치한다.
-4. 방향 1 hardware edition 진행 여부를 이후 결정한다.
+1. 최종 diff/source 독립 검토와 commit/push를 완료한다.
+2. 운영 서버에서 실제 flag 파일로 initramfs를 빌드하고 systemd unit을 설치한다.
+3. 방향 1 hardware edition 진행 여부를 이후 결정한다.
 
 single-enumeration dual configuration과 physical RP2040 검증은 방향 1의 후속 작업이며
 현재 방향 2 완료 조건이 아니다.

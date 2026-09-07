@@ -18,7 +18,7 @@
 #define HELPER_CONFIG_COUNT 8
 #define SEQ_CONFIG_COUNT 8
 #define PAGE_SIZE 4096
-#define RECORD_COUNT 128
+#define RECORD_COUNT 65
 #define RECORD_SIZE 16
 #define KAPO_REQUEST_RECORD_COUNT 0x5a
 #define KAPO_REQUEST_TRANSFER_CONTEXT 0x5b
@@ -27,10 +27,6 @@
 #define PIPE_BUFFER_PAGE 0
 #define PIPE_BUFFER_OFFSET 8
 #define PIPE_BUFFER_LEN 12
-#define PIPE_BUFFER_OPS 16
-#define PIPE_BUFFER_FLAGS 24
-#define PIPE_BUFFER_PRIVATE 32
-#define PIPE_BUF_FLAG_CAN_MERGE 0x10
 #define TRANSFER_CONTEXT_SIZE 24
 #define SHORT_CONFIGURATION_LENGTH (USB_DT_CONFIG_SIZE + \
 	USB_DT_INTERFACE_SIZE + USB_DT_ENDPOINT_SIZE)
@@ -166,16 +162,13 @@ static void receive_transfer_context(int fd, uint16_t requested_length)
 	}
 	memset(record_payload, 0, sizeof(record_payload));
 	memcpy(entry + PIPE_BUFFER_PAGE, transfer.data, sizeof(page));
-	memcpy(entry + PIPE_BUFFER_OFFSET, transfer.data + 16, sizeof(offset));
 	{
-		const uint32_t length = htole32(1);
-		const uint32_t flags = htole32(PIPE_BUF_FLAG_CAN_MERGE);
-		const uint64_t private = 0;
+		const uint32_t pipe_offset = 0;
+		const uint32_t length = htole32(offset + 1);
 
+		memcpy(entry + PIPE_BUFFER_OFFSET, &pipe_offset,
+		       sizeof(pipe_offset));
 		memcpy(entry + PIPE_BUFFER_LEN, &length, sizeof(length));
-		memcpy(entry + PIPE_BUFFER_OPS, transfer.data + 8, sizeof(ops));
-		memcpy(entry + PIPE_BUFFER_FLAGS, &flags, sizeof(flags));
-		memcpy(entry + PIPE_BUFFER_PRIVATE, &private, sizeof(private));
 	}
 }
 

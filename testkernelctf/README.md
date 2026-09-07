@@ -35,6 +35,8 @@ After preparing each stage, write exactly one line to `/tmp/kapo-usb-ready`:
 - `rootfs/initramfs.cpio.gz`: Ubuntu 24.04.4 challenge rootfs
 - `helper/kapo-helper`: stripped analysis copy of the SUID helper
 
-Ticket validation uses these original artifacts and runs only the submitted
-guest exploit as UID 65534. Replacing the initramfs or trusted emulator is not a
-valid solution.
+Use these artifacts to develop and test the exploit locally. During the event,
+connect to the challenge TCP endpoint and send one base64-encoded ELF line. The
+launcher starts a disposable QEMU with the real flag and provides its UID 65534
+serial shell. Obtain `/flag` there and submit it to the Jeopardy scoreboard.
+Replacing the initramfs or trusted emulator is not a valid solution.

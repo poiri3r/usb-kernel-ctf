@@ -69,6 +69,7 @@ gcc -static -Wall -Wextra -Werror -pthread \
 	"$project_dir/scripts/trusted-usb-emulator.c" \
 	-o "$rootfs/usr/sbin/kapo-usb-emulator"
 strip --strip-all "$rootfs/usr/sbin/kapo-usb-emulator" "$rootfs/kapo-helper"
+chmod 0700 "$rootfs/usr/sbin/kapo-usb-emulator"
 install -m 0755 "$rootfs/kapo-helper" "$helper_output"
 if [ -n "$flag_file" ]; then
 	install -m 0400 "$flag_file" "$rootfs/flag"

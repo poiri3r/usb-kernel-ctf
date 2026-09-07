@@ -26,13 +26,24 @@ Updated: 2026-09-07 KST
   163 seconds and again obtained the flag using the seq leak and runtime
   `page_cache_pipe_buf_ops`. This is regression time, not a fresh solve sample.
 - A fresh participant-only solve of the exact final archive succeeded in 1,190
-  seconds with the intended chain and no reported shortcut. One additional
-  final-archive session remains in progress.
+  seconds with the intended full-entry chain and no reported shortcut.
+- The current candidate makes the in-guest emulator root-only (`0700` plus
+  procfs `hidepid=2`) and reduces QEMU Stage 2 to a 16-byte overwrite of only
+  `page/offset/len`. The organizer chain passes TCG cold boot 5/5.
+- Three fresh archive-only partial-overwrite sessions reconstructed the partial
+  overwrite mechanics and final page-cache goal but did not obtain the guest
+  flag: 971, 1,637, and 1,787 seconds.
+  Their common blocker was reliable Stage 1 reclaim of the helper-backed
+  `pipe_buffer` page/ops data. Reported difficulty was about 8.5/10.
+  Evidence: `/tmp/kapo-partial-solve-a/attempt.log` (SHA-256
+  `2e4dfa2977d97ef47a5b2900eec6bed4cd70e60e002b9da216c44b3ba841551e`),
+  `/tmp/kapo-partial-solve-b/REPORT.md` (`21ac0606875c3b233185410421142f497c7430028f62e8c3b815efe9beb78ac1`),
+  and `/tmp/kapo-partial-solve-c/REPORT.md` (`7b0ae8d33b11bae29a4f4f8a34ad062d9ebbf8e26ca66e34ae9668a6161afb34`).
 
 ## Repository checkpoint
 
 - Branch: `main`
-- Base commit: `ff1833a`
+- Base commit: `6bdaac9`
 - Remote: private `poiri3r/usb-kernel-ctf`
 - Direction 1 remains preserved in `participant-release/`, `firmware/`, and the
   hardware documentation.
@@ -71,7 +82,7 @@ Updated: 2026-09-07 KST
 Archive:
 
 - Path: `testkernelctf.tar.xz`
-- SHA-256: `a5e93a01ff1a4af9d8570cdb9ec660e098d992eced7f0781d83690e055418a66`
+- SHA-256: `d36521e3eb6b46f37d448b9a696e3c549f675c2dec62d2eea402e990ed2712ff`
 
 Excluded from the Direction 2 archive:
 
@@ -87,7 +98,8 @@ Excluded from the Direction 2 archive:
 - Kernel hardening: `kernel-patches/0001-pipe-clear-resized-ring.patch`,
   `scripts/build-target-kernel.sh`, `usb/class/customdriver.c`
 - Emulator and organizer stability: `scripts/trusted-usb-emulator.c`,
-  `scripts/test-full-chain.c`
+  `scripts/test-full-chain.c`, `scripts/participant-init.sh`,
+  `scripts/build-participant-rootfs.sh`
 - Release kernel/metadata/artifact: `testkernelctf/kernel/bzImage`,
   `testkernelctf/kernel/vmlinux`, `testkernelctf/SHA256SUMS`, `testkernelctf.tar.xz`
 - Design and state: `docs/SPEC.md`, `STATUS.md`, `HANDOFF.md`, `README.md`
@@ -133,9 +145,10 @@ The runtime regression used the current `scripts/test-full-chain.c` linked with
   0xffffffff81329030 0xffffffff822285a0 0x1790
 ```
 
-Final intended-chain logs: `/tmp/kapo-final2-intended-1.log` through
-`/tmp/kapo-final2-intended-5.log`. Alternate-ops rejection:
-`/tmp/kapo-final2-wrong-ops.log`.
+Partial-overwrite intended-chain logs: `/tmp/kapo-partial-five-1.log` through
+`/tmp/kapo-partial-five-5.log`. Root-only guest check:
+`/tmp/kapo-partial-root-only.log`. Old full-entry regression:
+`/tmp/kapo-partial-old-full.log`.
 
 ## Verification
 
@@ -144,6 +157,10 @@ PASS:
 - `scripts/trusted-usb-emulator.c`: static build with
   `-Wall -Wextra -Werror -pthread`
 - `scripts/test-full-chain.c`: static build with warnings as errors
+- root-owned emulator mode `0700`; UID 65534 read denied; procfs `hidepid=2`
+- QEMU Stage 2 520-byte request, 1040-byte receive, 16-byte adjacent overwrite
+- post-review QEMU harness regression after restoring the Direction 1 hardware
+  branch: `PAGE_CACHE_WRITE_PASS`, UID 0, test flag, `FULL_CHAIN_PASS`
 - Linux 6.8.12 `bzImage` rebuild with fixed `kapo@builder`, build version 1,
   and `2026-09-07 00:00:00 UTC`
 - two initramfs rebuilds from the recorded inputs were byte-for-byte identical
@@ -162,7 +179,7 @@ PASS:
 - `nm` reports no symbols for distributed `vmlinux` and helper
 - `testkernelctf/SHA256SUMS`: PASS
 - initramfs ownership/modes: root-owned flag `0400`, helper `4755`, emulator
-  `0755`
+  `0700`
 - archive listing and internal-material exclusion check: PASS
 
 NOT TESTED / remaining:
@@ -211,5 +228,6 @@ NOT TESTED / remaining:
 
 ## Next action
 
-Record the remaining final-archive session at its 30-minute cutoff, finish the
-independent source/diff review, then run the bounded session finish script.
+Run the bounded independent diff review, then finish and push the exact
+candidate. The next deployment step is rebuilding the private server image with
+the real flag and installing the instance service.
