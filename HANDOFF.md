@@ -8,7 +8,7 @@ Updated: 2026-09-07 KST
 ## Repository checkpoint
 
 - Branch: `main`
-- Base commit: `a4e5e3e`
+- Base commit: `964fb92`
 - Remote: private `poiri3r/usb-kernel-ctf`
 - Direction 1 remains preserved in `participant-release/`, `firmware/`, and the
   hardware documentation.
@@ -99,6 +99,20 @@ HOSTLDFLAGS="-L$dep_root/root/usr/lib/x86_64-linux-gnu" \
   "$release_build_root/package/testkernelctf.tar.xz"
 ```
 
+The runtime regression used the current `scripts/test-full-chain.c` linked with
+`scripts/kapo-helper-shellcode.S`, copied only temporarily into
+`testkernelctf/work/`. Each run invoked:
+
+```sh
+/work/test-full-chain /sys/bus/usb/devices/1-1/descriptors \
+  /dev/kapo_ctf0 /kapo-helper \
+  0xffffffff81329030 0xffffffff822285a0 0x1790
+```
+
+Logs: `/tmp/kapo-rc-validation-1.log` through
+`/tmp/kapo-rc-validation-5.log`. The temporary exploit was removed from the
+release directory after validation.
+
 ## Verification
 
 PASS:
@@ -109,8 +123,8 @@ PASS:
 - Linux 6.8.12 `bzImage` rebuild with fixed `kapo@builder`, build version 1,
   and `2026-09-07 00:00:00 UTC`
 - two initramfs rebuilds from the recorded inputs were byte-for-byte identical
-- before the reproducibility rebuild, the same implementation passed 1 vCPU,
-  2 GiB QEMU TCG cold boot full chain 5/5; every run reached helper-page leak,
+- the reproducibly rebuilt release candidate passed QEMU 8.2.2, 1 vCPU,
+  2 GiB TCG cold boot full chain 5/5; every run reached helper-page leak,
   KASLR leak, page-cache write, UID 0, `KAPO{test_flag}`, and `FULL_CHAIN_PASS`
 - `nm` reports no symbols for distributed `vmlinux` and helper
 - `testkernelctf/SHA256SUMS`: PASS
@@ -120,8 +134,6 @@ PASS:
 
 NOT TESTED / remaining:
 
-- runtime regression of the newly rebuilt release candidate; this WSL currently
-  has no `qemu-system-x86_64` in PATH
 - KVM execution path
 - independent teammate LLM-only black-box solve
 - physical RP2040 full chain
@@ -129,8 +141,7 @@ NOT TESTED / remaining:
 
 ## Next action
 
-Run the newly rebuilt `testkernelctf.tar.xz` through TCG cold boot full chain
-5/5. If it passes, give only that archive to teammates for an LLM-only black-box
-solve. Collect solve time, missing-file reports, and unintended shortcuts. Do
-not send this repository, `docs/SPEC.md`, `STATUS.md`, `HANDOFF.md`, or files
-under `scripts/`.
+Give only `testkernelctf.tar.xz` to teammates for an LLM-only black-box solve.
+Collect solve time, missing-file reports, and unintended shortcuts. Do not send
+this repository, `docs/SPEC.md`, `STATUS.md`, `HANDOFF.md`, or files under
+`scripts/`.

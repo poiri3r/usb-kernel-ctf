@@ -50,9 +50,9 @@ black-box 풀이를 요청하며, 방향 1은 폐기하지 않고 후속 hardwar
   따른 bulk payload 생성만 담당한다.
   helper/seq grooming, leak 판독, context 계산, pipe spray와 최종 trigger는 모두 UID
   65534 participant exploit이 담당한다.
-- 구현 상태: **Release candidate implemented and internally validated**.
+- 구현 상태: **Release candidate implemented and runtime validated**.
   `testkernelctf/`와 `testkernelctf.tar.xz`는 방향 2 배포 후보이며, 재현성 재빌드
-  artifact의 runtime regression과 팀원 black-box 풀이가 남아 있다.
+  artifact의 TCG cold boot full chain은 5/5다. 팀원 black-box 풀이가 남아 있다.
   `participant-release/`는 방향 1 RP2040 pre-release로 보존한다.
 
 ### 두 방향이 공유하는 고정 exploit chain

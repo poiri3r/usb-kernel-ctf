@@ -8,9 +8,8 @@ USB core의 Stage 1 heap disclosure와 CTF용 custom driver의 Stage 2 heap over
 
 - 현재 우선 개발 방향: QEMU-only software edition
 - 후속 보존 방향: RP2040 hardware edition
-- QEMU-only 배포 후보 `testkernelctf/`와 `testkernelctf.tar.xz`: RC READY
-- 재현성 재빌드 전 후보 cold boot full chain 및 test flag: PASS 5/5
-- 현재 재현성 재빌드 artifact runtime regression: NOT TESTED
+- QEMU-only 배포 후보 `testkernelctf/`와 `testkernelctf.tar.xz`: VALIDATED RC
+- 현재 재현성 재빌드 artifact cold boot full chain 및 test flag: TCG PASS 5/5
 - Target-equivalent Linux 6.8.12 QEMU full chain: PASS 10/10
 - 비특권 UID 65534에서 UID 0 및 `KAPO{test_flag}` 획득: PASS 10/10
 - 현재 kernel source rebuild 및 hardware initramfs boot smoke: PASS
@@ -21,9 +20,9 @@ USB core의 Stage 1 heap disclosure와 CTF용 custom driver의 Stage 2 heap over
 
 방향 2 배포 후보는 organizer-owned trusted USB emulator daemon을 QEMU guest에서 root로
 시작하되 disconnected 상태로 대기시킨다. 참가자가 UID 65534 guest exploit으로 모든
-heap grooming과 trigger를 수행한다. 재현성 재빌드 전 후보에서 `KAPO{test_flag}` 획득을
-5/5회 확인했다. 다음 이정표는 현재 artifact의 runtime regression과 팀원의 LLM 기반
-black-box 풀이 및 난이도 확인이다.
+heap grooming과 trigger를 수행한다. 현재 재현성 재빌드 후보에서 `KAPO{test_flag}` 획득을
+TCG cold boot 5/5로 확인했다. 다음 이정표는 팀원의 LLM 기반 black-box 풀이 및 난이도
+확인이다.
 
 `dist/hardware-validation/`에 `bzImage`, `vmlinux`, `System.map`, kernel config,
 test initramfs와 `kapo-rp2040.uf2`를 생성했다. 이 디렉터리는 Git에 포함하지 않는 로컬

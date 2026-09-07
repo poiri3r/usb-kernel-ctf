@@ -10,17 +10,17 @@
 | 범위 | 상태 | 근거와 한계 |
 |---|---|---|
 | 현재 개발 방향 | DIRECTION 2 | QEMU-only software edition을 먼저 완성하고 팀원 풀이 진행 |
-| 방향 2 trusted USB emulator 및 배포본 | RC | 재현성 재빌드 완료, 새 artifact runtime regression 대기 |
-| 문제 설계 및 QEMU exploit chain | PASS | Linux 6.8.12 target-equivalent 기존 10/10, 재빌드 전 후보 5/5 |
+| 방향 2 trusted USB emulator 및 배포본 | RUNTIME PASS | 재현성 재빌드 artifact TCG cold boot 5/5 |
+| 문제 설계 및 QEMU exploit chain | PASS | Linux 6.8.12 target-equivalent 기존 10/10, 현재 후보 5/5 |
 | 현재 kernel source | BUILD PASS | disconnect devnode fix를 포함한 최종 `bzImage` 재빌드 |
 | hardware validation initramfs | BOOT PASS | 1 vCPU, 2 GiB QEMU에서 UID 65534 harness 시작 확인 |
 | RP2040 firmware | BUILD PASS | Pico SDK 2.3.1 ARM build와 host protocol self-test 통과 |
 | hardware-validation bundle | BUILT | 로컬 `dist/hardware-validation/`, artifact hash 검증 통과 |
 | 참가자 pre-release | BUILD/BOOT PASS | `participant-release/`, Ubuntu 24.04.4, UID 65534 shell 확인 |
 | 실제 RP2040 full chain | NOT TESTED | 보드 연결 후 확인 필요 |
-| 참가자 배포 후보 | RC READY | `testkernelctf/`와 `testkernelctf.tar.xz`, SHA-256 검증 완료 |
+| 참가자 배포 후보 | VALIDATED RC | `testkernelctf/`와 archive hash 및 TCG 5/5 검증 완료 |
 
-현재 단계는 **방향 2 QEMU-only 재현 배포 후보의 runtime regression 대기**다.
+현재 단계는 **방향 2 QEMU-only 배포 후보의 팀원 black-box 풀이 대기**다.
 RP2040 hardware edition은 방향 1로 보존하지만 현재 완료 조건은 아니다.
 
 ## 2026-09-07 — QEMU-only 배포 후보
@@ -37,10 +37,10 @@ RP2040 hardware edition은 방향 1로 보존하지만 현재 완료 조건은 �
   `System.map`은 제외했으며 배포 `vmlinux`와 helper는 `strip --strip-all`을 적용했다.
 - `testkernelctf/`에는 QEMU-only 실행에 필요한 파일만 남겼고 RP2040 firmware,
   USB passthrough script, organizer exploit/harness와 내부 문서를 제외했다.
-- 재현성 수정 전 동일 구현의 kernel/rootfs/helper로 1 vCPU, 2 GiB, TCG cold boot
-  full chain을 5/5회 실행해 UID 65534에서 UID 0과 `KAPO{test_flag}` 획득을 확인했다.
-- 고정 build identity와 epoch를 적용해 kernel/rootfs/archive를 다시 만들었다. 새 artifact는
-  현재 환경에 `qemu-system-x86_64`가 없어 runtime regression을 아직 실행하지 못했다.
+- 고정 build identity와 epoch를 적용해 kernel/rootfs/archive를 다시 만들었다.
+- 재현성 재빌드한 정확한 artifact로 QEMU 8.2.2, 1 vCPU, 2 GiB, TCG cold boot
+  full chain을 5/5회 실행했다. 매 회 UID 65534에서 helper-page leak, KASLR leak,
+  page-cache overwrite, UID 0, `KAPO{test_flag}`, `FULL_CHAIN_PASS`를 확인했다.
 - `testkernelctf.tar.xz`를 생성했다. archive SHA-256은
   `b161e85ed2bba672d4af68c919e838b9b950f2ea94a90997b5082b57bbaeedc8`이다.
 
@@ -96,11 +96,10 @@ RP2040 hardware edition은 방향 1로 보존하지만 현재 완료 조건은 �
 
 ## 남은 작업
 
-1. 재현성 재빌드한 `testkernelctf.tar.xz`로 TCG cold boot full chain 5/5를 다시 실행한다.
-2. 팀원에게 이 archive만 전달해 LLM 기반 black-box 풀이와 난이도를 확인한다.
-3. 팀원 결과에 따라 참가자 문구와 힌트만 조정한다. exploit chain은 변경하지 않는다.
-4. 실제 대회 flag가 든 initramfs는 운영 직전에 별도로 만들고 배포 저장소에는 추가하지 않는다.
-5. 방향 1 hardware edition 진행 여부를 이후 결정한다.
+1. 팀원에게 `testkernelctf.tar.xz`만 전달해 LLM 기반 black-box 풀이와 난이도를 확인한다.
+2. 팀원 결과에 따라 참가자 문구와 힌트만 조정한다. exploit chain은 변경하지 않는다.
+3. 실제 대회 flag가 든 initramfs는 운영 직전에 별도로 만들고 배포 저장소에는 추가하지 않는다.
+4. 방향 1 hardware edition 진행 여부를 이후 결정한다.
 
 single-enumeration dual configuration과 physical RP2040 검증은 방향 1의 후속 작업이며
 현재 방향 2 완료 조건이 아니다.
@@ -111,7 +110,7 @@ single-enumeration dual configuration과 physical RP2040 검증은 방향 1의 �
 
 - 방향 2 trusted emulator 정적 빌드 (`-Wall -Wextra -Werror`, static, stripped)
 - 방향 2 Linux 6.8.12 kernel rebuild
-- 재현성 재빌드 전 QEMU-only 후보 full chain cold boot 5/5
+- 재현성 재빌드 QEMU-only 후보 full chain TCG cold boot 5/5
   (UID 65534 → UID 0 → `KAPO{test_flag}`)
 - 고정 identity의 Linux 6.8.12 kernel rebuild
 - 동일 입력 initramfs 2회 byte-for-byte 일치
@@ -133,11 +132,10 @@ single-enumeration dual configuration과 physical RP2040 검증은 방향 1의 �
 
 ### 미검증 또는 제한
 
-- 재현성 재빌드 artifact의 TCG/KVM runtime은 NOT TESTED다.
 - 팀원 LLM black-box 풀이는 NOT TESTED다.
 - 실제 RP2040 USB enumeration 및 full chain은 NOT TESTED다.
 - current kernel의 physical USB path와 three-reconnect runtime은 보드가 필요하다.
-- 재현성 수정 전 후보는 TCG 5/5이며 KVM 경로는 NOT TESTED다.
+- 현재 후보의 KVM 경로는 NOT TESTED다.
 - 실제 flag 주입과 현장 ticket 운영 절차는 미확정이다.
 
 ## Git 상태
@@ -148,3 +146,13 @@ single-enumeration dual configuration과 physical RP2040 검증은 방향 1의 �
 - 생성된 `dist/`와 `firmware/build/`은 `.gitignore` 대상이다.
 - `participant-release/`는 방향 1 pre-release로 보존한다.
 - `testkernelctf/`와 `testkernelctf.tar.xz`가 방향 2 배포 후보 산출물이다.
+
+## 예비 난이도 평가
+
+- 판정: **상**. Stage 1 USB core leak과 Stage 2 custom driver overflow를 연결하고,
+  KASLR 및 vmemmap 계산, pipe heap grooming, page-cache overwrite까지 참가자 exploit이
+  직접 구현해야 한다.
+- 배포 `vmlinux`와 helper는 stripped 상태이고 `System.map`이 없어 정적 분석 부담이 있다.
+- emulator contract와 세 단계 readiness 순서는 공개되므로 USB transport 구현 부담은
+  줄지만 kernel heap exploit 난이도는 유지된다.
+- 최종 난이도와 예상 풀이 시간은 팀원 black-box 결과 후 확정한다.
