@@ -50,8 +50,10 @@ black-box 풀이를 요청하며, 방향 1은 폐기하지 않고 후속 hardwar
   따른 bulk payload 생성만 담당한다.
   helper/seq grooming, leak 판독, context 계산, pipe spray와 최종 trigger는 모두 UID
   65534 participant exploit이 담당한다.
-- 구현 상태: **Confirmed design, NOT IMPLEMENTED**. 현재 `participant-release/`는
-  RP2040 pre-release이므로 방향 2의 완성 배포본이 아니다.
+- 구현 상태: **Release candidate implemented and internally validated**.
+  `testkernelctf/`와 `testkernelctf.tar.xz`는 방향 2 배포 후보이며, 재현성 재빌드
+  artifact의 runtime regression과 팀원 black-box 풀이가 남아 있다.
+  `participant-release/`는 방향 1 RP2040 pre-release로 보존한다.
 
 ### 두 방향이 공유하는 고정 exploit chain
 
@@ -73,19 +75,19 @@ black-box 풀이를 요청하며, 방향 1은 폐기하지 않고 후속 hardwar
   exploit primitive 준비는 UID 65534 participant exploit이 수행한다.
 - participant exploit은 `/work`에서 UID 65534로 실행되며 organizer harness나
   solve 없이 `KAPO{test_flag}`를 획득할 수 있다.
-- cold boot 10/10에서 full chain이 성공한다.
+- 사용자 지정 안정성 범위인 cold boot 5/5에서 full chain이 성공한다.
 - 배포 archive에 이 문서, `STATUS.md`, `HANDOFF.md`, organizer exploit/harness,
   실제 flag가 포함되지 않는다.
-- final release에서 `System.map` 배포를 중단하고 `vmlinux` ELF symbol/debug table을
-  strip하며 `CONFIG_KALLSYMS`, `CONFIG_KALLSYMS_ALL`, 노골적인 custom symbol과
-  log string 노출을 재검토한다. 이 hardening은 아직 NOT IMPLEMENTED다.
+- final release에서 `System.map`을 제외하고 `vmlinux` ELF symbol/debug table과 helper
+  symbol을 strip한다. `CONFIG_KALLSYMS_ALL`은 비활성화하며 참가자에게 필요한 최소
+  USB emulator contract만 README에 공개한다.
 - 내부 검증 후 팀원이 participant archive만 받아 hardware 없이 독립적으로
   풀이하고 난이도와 누락 파일을 보고한다.
 
 ## 1. 문제 개요
 
-- 문제 이름: TBD
-- 분야: Pwn / Kernel / Hardware
+- 문제 이름: KAPO USB Kernel CTF
+- 분야: Pwn / Kernel
 - 목표 난이도: 상
 - 실행 환경: Ubuntu 24.04 + Linux Kernel 6.8
 - 공격 입력 장치: 방향 1은 RP2040 Zero, 방향 2는 organizer-owned trusted Raw Gadget

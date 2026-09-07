@@ -8,26 +8,29 @@ USB core의 Stage 1 heap disclosure와 CTF용 custom driver의 Stage 2 heap over
 
 - 현재 우선 개발 방향: QEMU-only software edition
 - 후속 보존 방향: RP2040 hardware edition
+- QEMU-only 배포 후보 `testkernelctf/`와 `testkernelctf.tar.xz`: RC READY
+- 재현성 재빌드 전 후보 cold boot full chain 및 test flag: PASS 5/5
+- 현재 재현성 재빌드 artifact runtime regression: NOT TESTED
 - Target-equivalent Linux 6.8.12 QEMU full chain: PASS 10/10
 - 비특권 UID 65534에서 UID 0 및 `KAPO{test_flag}` 획득: PASS 10/10
 - 현재 kernel source rebuild 및 hardware initramfs boot smoke: PASS
 - RP2040 firmware ARM build 및 host protocol self-test: PASS
 - 로컬 hardware-validation bundle과 `SHA256SUMS`: BUILT
-- 참가자용 pre-release 폴더, Ubuntu 24.04.4 initramfs와 실행 스크립트: BUILT
+- 방향 1 참가자 pre-release 폴더와 RP2040 실행 파일: BUILT/PRESERVED
 - 실제 RP2040 full chain: NOT TESTED
 
-다음 이정표는 organizer-owned trusted USB emulator daemon을 QEMU guest에서 자동
-시작하되 disconnected 상태로 대기시키고, 참가자가 UID 65534 guest exploit으로 모든
-heap grooming과 trigger를 수행해 `KAPO{test_flag}`를 획득할 수 있는 방향 2 배포본을
-만드는 것이다. 방향 1의 RP2040 firmware와 검증 자료는 후속 hardware edition을 위해
-보존한다.
+방향 2 배포 후보는 organizer-owned trusted USB emulator daemon을 QEMU guest에서 root로
+시작하되 disconnected 상태로 대기시킨다. 참가자가 UID 65534 guest exploit으로 모든
+heap grooming과 trigger를 수행한다. 재현성 재빌드 전 후보에서 `KAPO{test_flag}` 획득을
+5/5회 확인했다. 다음 이정표는 현재 artifact의 runtime regression과 팀원의 LLM 기반
+black-box 풀이 및 난이도 확인이다.
 
 `dist/hardware-validation/`에 `bzImage`, `vmlinux`, `System.map`, kernel config,
 test initramfs와 `kapo-rp2040.uf2`를 생성했다. 이 디렉터리는 Git에 포함하지 않는 로컬
 검증 산출물이며 방향 1용으로 보존한다.
 
-현재 `participant-release/`는 방향 1 RP2040 pre-release다. 방향 2 배포본이 완성될
-때까지 참가자 최종 배포본으로 취급하지 않는다.
+`participant-release/`는 방향 1 RP2040 pre-release로 보존한다. 방향 2 참가자에게는
+`testkernelctf.tar.xz`만 전달한다.
 
 ## 문서
 
@@ -37,5 +40,5 @@ test initramfs와 `kapo-rp2040.uf2`를 생성했다. 이 디렉터리는 Git에 
 - `HANDOFF.md`: 현재 작업 트리, 검증 한계와 바로 다음 작업
 - `AGENTS.md`: 저장소 작업 규칙과 세션 절차
 
-실제 flag와 내부 검증 artifact는 저장소에 추가하지 않는다. `participant-release/`의
-배포 바이너리는 이번 참가자 패키지를 위해 의도적으로 추적한다.
+실제 flag와 내부 검증 exploit은 저장소에 추가하지 않는다. 방향 2 배포본에는
+`KAPO{test_flag}`만 포함한다.

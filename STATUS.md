@@ -3,25 +3,46 @@
 이 문서는 이정표별 진행 상황과 검증 범위를 기록한다. 작업 재개 순서는
 `docs/SPEC.md` → 이 문서 → `HANDOFF.md`이다.
 
-최종 갱신: 2026-09-06 KST
+최종 갱신: 2026-09-07 KST
 
 ## 현재 요약
 
 | 범위 | 상태 | 근거와 한계 |
 |---|---|---|
 | 현재 개발 방향 | DIRECTION 2 | QEMU-only software edition을 먼저 완성하고 팀원 풀이 진행 |
-| 방향 2 trusted USB emulator 및 배포본 | NOT IMPLEMENTED | 다음 세션의 현재 작업 |
-| 문제 설계 및 QEMU exploit chain | PASS | Linux 6.8.12 target-equivalent cold boot 10/10 |
-| 현재 kernel source | BUILD PASS | review fix와 hardware stage ioctl을 포함해 `bzImage` 재빌드 |
+| 방향 2 trusted USB emulator 및 배포본 | RC | 재현성 재빌드 완료, 새 artifact runtime regression 대기 |
+| 문제 설계 및 QEMU exploit chain | PASS | Linux 6.8.12 target-equivalent 기존 10/10, 재빌드 전 후보 5/5 |
+| 현재 kernel source | BUILD PASS | disconnect devnode fix를 포함한 최종 `bzImage` 재빌드 |
 | hardware validation initramfs | BOOT PASS | 1 vCPU, 2 GiB QEMU에서 UID 65534 harness 시작 확인 |
 | RP2040 firmware | BUILD PASS | Pico SDK 2.3.1 ARM build와 host protocol self-test 통과 |
 | hardware-validation bundle | BUILT | 로컬 `dist/hardware-validation/`, artifact hash 검증 통과 |
 | 참가자 pre-release | BUILD/BOOT PASS | `participant-release/`, Ubuntu 24.04.4, UID 65534 shell 확인 |
 | 실제 RP2040 full chain | NOT TESTED | 보드 연결 후 확인 필요 |
-| 참가자 최종 배포본 | NOT FINAL | 현재 폴더는 방향 1 RP2040 pre-release |
+| 참가자 배포 후보 | RC READY | `testkernelctf/`와 `testkernelctf.tar.xz`, SHA-256 검증 완료 |
 
-현재 단계는 **방향 2 QEMU-only 배포본 구현 시작 전**이다. RP2040 hardware edition은
-방향 1로 보존하지만 당장 완료 조건으로 삼지 않는다.
+현재 단계는 **방향 2 QEMU-only 재현 배포 후보의 runtime regression 대기**다.
+RP2040 hardware edition은 방향 1로 보존하지만 현재 완료 조건은 아니다.
+
+## 2026-09-07 — QEMU-only 배포 후보
+
+- `scripts/trusted-usb-emulator.c`에 세 단계 Raw Gadget emulator를 구현했다. root
+  daemon은 USB transport, descriptor, reconnect, transfer context 역직렬화와 그 값에
+  따른 Stage 2 payload만 담당하며 helper/seq/pipe grooming이나 flag 접근은 하지 않는다.
+- `scripts/participant-init.sh`가 daemon을 root로 시작하고 readiness FIFO를 만든 뒤
+  UID 65534 shell을 연다. 참가자 exploit은 helper/seq grooming과 Stage 2 pipe 준비를
+  모두 직접 수행한다.
+- 첫 방향 2 실행에서 disconnect cleanup의 `custom_devnode()` NULL dereference를
+  재현했고 `mode`가 존재할 때만 권한을 기록하도록 수정했다.
+- Linux 6.8.12 배포 커널을 재빌드하고 `CONFIG_KALLSYMS_ALL`을 비활성화했다.
+  `System.map`은 제외했으며 배포 `vmlinux`와 helper는 `strip --strip-all`을 적용했다.
+- `testkernelctf/`에는 QEMU-only 실행에 필요한 파일만 남겼고 RP2040 firmware,
+  USB passthrough script, organizer exploit/harness와 내부 문서를 제외했다.
+- 재현성 수정 전 동일 구현의 kernel/rootfs/helper로 1 vCPU, 2 GiB, TCG cold boot
+  full chain을 5/5회 실행해 UID 65534에서 UID 0과 `KAPO{test_flag}` 획득을 확인했다.
+- 고정 build identity와 epoch를 적용해 kernel/rootfs/archive를 다시 만들었다. 새 artifact는
+  현재 환경에 `qemu-system-x86_64`가 없어 runtime regression을 아직 실행하지 못했다.
+- `testkernelctf.tar.xz`를 생성했다. archive SHA-256은
+  `b161e85ed2bba672d4af68c919e838b9b950f2ea94a90997b5082b57bbaeedc8`이다.
 
 ## 2026-09-06 — QEMU-only 우선 개발 결정
 
@@ -75,21 +96,11 @@
 
 ## 남은 작업
 
-1. 기존 Raw Gadget 코드에서 USB transport, descriptor와 payload 처리만 재사용해
-   organizer-owned trusted USB emulator가 세 모드를 한 프로세스에서 제공하도록 한다.
-   기존 gadget-side helper/seq/pipe grooming 코드는 재사용하지 않는다.
-2. emulator를 root로 먼저 실행한 뒤 UID 65534 participant shell/exploit을 시작하는
-   방향 2 initramfs를 만든다. daemon은 disconnected 상태로 기다리고 participant
-   exploit이 grooming 뒤 readiness signal을 보내 첫 enumeration을 시작한다.
-3. `/work`에는 participant exploit만 전달하고 emulator 교체나 `/dev/raw-gadget`
-   직접 접근이 ticket 신뢰 경계를 우회하지 않는지 확인한다.
-4. RP2040 firmware와 hardware 문서는 보존하되 방향 2 participant archive에서
-   firmware, USB passthrough 의존성을 제거한다.
-5. final symbol exposure 정책을 적용하고 archive에 internal material과 실제 flag가
-   없는지 검사한다.
-6. 방향 2 cold boot full chain 10/10 뒤 팀원에게 participant archive만 전달해
-   black-box 풀이를 요청한다.
-7. 팀원 결과를 반영한 뒤 방향 1 hardware edition 진행 여부를 결정한다.
+1. 재현성 재빌드한 `testkernelctf.tar.xz`로 TCG cold boot full chain 5/5를 다시 실행한다.
+2. 팀원에게 이 archive만 전달해 LLM 기반 black-box 풀이와 난이도를 확인한다.
+3. 팀원 결과에 따라 참가자 문구와 힌트만 조정한다. exploit chain은 변경하지 않는다.
+4. 실제 대회 flag가 든 initramfs는 운영 직전에 별도로 만들고 배포 저장소에는 추가하지 않는다.
+5. 방향 1 hardware edition 진행 여부를 이후 결정한다.
 
 single-enumeration dual configuration과 physical RP2040 검증은 방향 1의 후속 작업이며
 현재 방향 2 완료 조건이 아니다.
@@ -98,6 +109,15 @@ single-enumeration dual configuration과 physical RP2040 검증은 방향 1의 �
 
 ### PASS
 
+- 방향 2 trusted emulator 정적 빌드 (`-Wall -Wextra -Werror`, static, stripped)
+- 방향 2 Linux 6.8.12 kernel rebuild
+- 재현성 재빌드 전 QEMU-only 후보 full chain cold boot 5/5
+  (UID 65534 → UID 0 → `KAPO{test_flag}`)
+- 고정 identity의 Linux 6.8.12 kernel rebuild
+- 동일 입력 initramfs 2회 byte-for-byte 일치
+- 배포 `vmlinux`와 helper의 symbol table 제거 확인 (`nm`: no symbols)
+- `testkernelctf/SHA256SUMS` 전체 검증
+- archive listing에서 organizer exploit/harness, 내부 문서, RP2040 파일 제외 확인
 - 기존 target-equivalent QEMU full chain 10/10
 - current Linux 6.8.12 `bzImage` rebuild
 - current kernel + hardware initramfs boot smoke
@@ -113,12 +133,11 @@ single-enumeration dual configuration과 physical RP2040 검증은 방향 1의 �
 
 ### 미검증 또는 제한
 
-- 방향 2 trusted USB emulator, initramfs와 participant archive는 NOT IMPLEMENTED다.
-- 팀원 black-box 풀이는 NOT TESTED다.
+- 재현성 재빌드 artifact의 TCG/KVM runtime은 NOT TESTED다.
+- 팀원 LLM black-box 풀이는 NOT TESTED다.
 - 실제 RP2040 USB enumeration 및 full chain은 NOT TESTED다.
 - current kernel의 physical USB path와 three-reconnect runtime은 보드가 필요하다.
-- current kernel source로 기존 Raw Gadget full chain 10/10을 다시 돌리지는 않았다.
-- 참가자 QEMU 실행 명령은 작성했지만 KVM 및 physical USB passthrough는 미검증이다.
+- 재현성 수정 전 후보는 TCG 5/5이며 KVM 경로는 NOT TESTED다.
 - 실제 flag 주입과 현장 ticket 운영 절차는 미확정이다.
 
 ## Git 상태
@@ -127,4 +146,5 @@ single-enumeration dual configuration과 physical RP2040 검증은 방향 1의 �
 - 이 문서를 포함하는 checkpoint에 full-chain, firmware, bundle build와 문서 변경을
   함께 기록한다.
 - 생성된 `dist/`와 `firmware/build/`은 `.gitignore` 대상이다.
-- `participant-release/`의 pre-release 배포 파일과 바이너리는 이번 요청에 따라 추적한다.
+- `participant-release/`는 방향 1 pre-release로 보존한다.
+- `testkernelctf/`와 `testkernelctf.tar.xz`가 방향 2 배포 후보 산출물이다.

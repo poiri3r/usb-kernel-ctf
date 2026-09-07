@@ -188,7 +188,8 @@ static const struct file_operations custom_fops = {
 static char *custom_devnode(const struct device *dev, umode_t *mode)
 {
 	(void)dev;
-	*mode = 0666;
+	if (mode)
+		*mode = 0666;
 	return NULL;
 }
 

@@ -1,0 +1,51 @@
+#!/bin/sh
+
+set -eu
+
+if [ "$#" -ne 5 ]; then
+	echo "usage: $0 <kernel-output> <initramfs> <helper> <output-dir> <archive>" >&2
+	exit 1
+fi
+
+kernel_output=$1
+initramfs=$2
+helper=$3
+output=$4
+archive=$5
+project_dir=$(CDPATH= cd -- "$(dirname "$0")/.." && pwd)
+source_date_epoch=${SOURCE_DATE_EPOCH:-1788739200}
+
+for file in "$kernel_output/arch/x86/boot/bzImage" \
+	"$kernel_output/vmlinux" "$kernel_output/.config" "$initramfs" "$helper"; do
+	[ -f "$file" ] || {
+		echo "missing required file: $file" >&2
+		exit 1
+	}
+done
+[ ! -e "$output" ] || {
+	echo "$output already exists" >&2
+	exit 1
+}
+[ ! -e "$archive" ] || {
+	echo "$archive already exists" >&2
+	exit 1
+}
+
+mkdir -p "$output/kernel" "$output/rootfs" "$output/helper" "$output/work"
+install -m 0644 "$project_dir/testkernelctf/README.md" "$output/README.md"
+install -m 0755 "$project_dir/testkernelctf/run-qemu.sh" "$output/run-qemu.sh"
+install -m 0644 "$kernel_output/arch/x86/boot/bzImage" "$output/kernel/bzImage"
+install -m 0644 "$kernel_output/.config" "$output/kernel/kernel.config"
+install -m 0644 "$kernel_output/vmlinux" "$output/kernel/vmlinux"
+install -m 0644 "$initramfs" "$output/rootfs/initramfs.cpio.gz"
+install -m 0644 "$helper" "$output/helper/kapo-helper"
+: >"$output/work/.gitkeep"
+strip --strip-all "$output/kernel/vmlinux" "$output/helper/kapo-helper"
+(
+	cd "$output"
+	find . -type f ! -path './SHA256SUMS' ! -path './work/*' -print \
+		| LC_ALL=C sort | xargs sha256sum >SHA256SUMS
+)
+find "$output" -exec touch -h -d "@$source_date_epoch" {} +
+tar --sort=name --mtime="@$source_date_epoch" --owner=0 --group=0 \
+	--numeric-owner -C "$(dirname "$output")" -cJf "$archive" "$(basename "$output")"
