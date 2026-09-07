@@ -28,6 +28,20 @@
 배포 미완료**다.
 RP2040 hardware edition은 방향 1로 보존하지만 현재 완료 조건은 아니다.
 
+## 2026-09-07 — 로컬·원격 QEMU 장치 배치 통일
+
+- 원격 launcher의 `-nic none`에서는 기존 의도 exploit이 Stage 1 두 leak과 Stage 2
+  ioctl까지 도달한 뒤 `helper page-cache patch did not land`로 실패했다. 같은 binary를
+  기본 NIC 배치에서 실행하면 full chain이 성공해 QEMU 장치 배치 차이를 원인으로
+  확인했다.
+- 로컬 `run-qemu.sh`와 원격 launcher를 모두 명시적 e1000 장치와
+  `user,restrict=on` backend로 통일했다. guest가 외부 연결을 시작하는 것은 차단하면서
+  kmalloc 배치에 영향을 주는 PCI 장치 topology는 동일하게 유지한다.
+- exploit의 단일 hole·단일 live pipe target은 변경하지 않았다. 새 TCP disposable
+  QEMU 5/5와 로컬 `run-qemu.sh` 1/1에서 `PAGE_CACHE_WRITE_PASS`, UID 0,
+  `KAPO{test_flag}`, `FULL_CHAIN_PASS`를 확인했다.
+- launcher unit test는 restricted backend와 e1000 device 인자를 검증하도록 갱신했다.
+
 ## 2026-09-07 — 출제자용 write-up 정리
 
 - `docs/WRITEUP.md`에 short configuration disclosure, helper page leak, seq KASLR
@@ -53,7 +67,7 @@ RP2040 hardware edition은 방향 1로 보존하지만 현재 완료 조건은 �
 - 이전 full-entry fresh exploit은 새 후보에서 1040-byte receive까지 도달했지만 flag를
   얻지 못했다.
 - 후보 archive SHA-256은
-  `d36521e3eb6b46f37d448b9a696e3c549f675c2dec62d2eea402e990ed2712ff`이다.
+  `b630c93bfbb129dbc1ab1b761039582037449d6bbca134f19d37a53f919f5456`이다.
 - archive-only 독립 AI 풀이 3개는 971초, 1,637초, 1,787초에 종료했고
   guest UID 65534 flag를 얻지 못했다. 모두 8–13분 내에 16-byte overwrite의
   필드와 page-cache overwrite 최종 목표를 복원했지만, Stage 1의 helper-backed
@@ -142,7 +156,9 @@ RP2040 hardware edition은 방향 1로 보존하지만 현재 완료 조건은 �
 - `scripts/jeopardy_qemu_server.py`에 표준 라이브러리 기반 TCP/QEMU launcher를 구현했다.
   동시 실행 상한, session timeout, 연결 종료 시 process-group cleanup을 포함한다.
 - launcher가 생성하는 QEMU에는 session별 exploit directory만 `/work`로 연결되며,
-  monitor와 guest network는 없다. server 종료 시에도 실행 중 QEMU를 정리한다.
+  monitor는 없다. e1000 장치는 로컬과 같은 heap 배치를 위해 유지하되 QEMU user
+  backend의 `restrict=on`으로 guest 발신 네트워크를 차단한다. server 종료 시에도
+  실행 중 QEMU를 정리한다.
 - 외부 flag 파일을 다섯 번째 인자로 받는 server-only initramfs build 경계와 systemd
   격리 unit을 추가했다. builder는 종료 시 flag가 든 임시 rootfs와 cpio를 삭제한다.
   실제 운영 flag는 저장소나 배포 archive에 포함하지 않는다.

@@ -12,7 +12,8 @@ sha256sum -c SHA256SUMS
 
 The guest mounts `work/` at `/work` and opens an unprivileged shell. Put your
 exploit and source in that directory. KVM is used when available; otherwise the
-launcher falls back to TCG.
+launcher falls back to TCG. The explicit e1000 device uses a restricted QEMU
+backend and does not provide guest access to external networks.
 
 ## USB emulator contract
 

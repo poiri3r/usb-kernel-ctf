@@ -155,7 +155,9 @@ exec SUID helper -> UID 0 -> read /flag
 - 로컬 배포본은 `KAPO{test_flag}`를 넣은 QEMU다.
 - 대회에서는 TCP로 base64 ELF를 받고, 실제 flag가 든 disposable QEMU의
   UID 65534 serial shell을 같은 연결에 제공한다.
-- organizer chain은 TCG cold boot 5/5에서 test flag를 획득했다.
+- organizer chain은 TCG cold boot 5/5에서 test flag를 획득했다. 로컬·원격을 같은
+  restricted e1000 장치 배치로 통일한 뒤에도 기존 단일-hole/단일-target exploit이
+  TCP fresh boot 5/5와 로컬 launcher 1/1에서 성공했다.
 - 최종 partial archive를 받은 독립 AI 3개는 구조를 복원했지만
   971초, 1,637초, 1,787초 내에 flag를 얻지 못했다.
 - 난이도는 약 8.5/10으로 평가했다. 외부 독립 완주 표본과 실제

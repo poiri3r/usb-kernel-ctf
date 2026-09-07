@@ -12,7 +12,8 @@ USB core의 Stage 1 heap disclosure와 CTF용 custom driver의 Stage 2 heap over
 - 구현·artifact·로컬 검증·독립 검토 commit `60d0e37` push: COMPLETE
 - 운영 서버의 실제 flag image/systemd/KVM 검증: NOT DEPLOYED
 - 현재 재현성 재빌드 artifact cold boot full chain 및 test flag: TCG PASS 5/5
-- Jeopardy localhost TCP disposable QEMU와 외부 test flag 주입 full chain: PASS
+- 동일한 restricted e1000 배치의 로컬/Jeopardy QEMU full chain: local PASS,
+  TCP fresh boot PASS 5/5
 - 힌트 축소 배포본 독립 AI black-box 풀이: PASS 3/3, median 13분 43초
 - helper-stage pipe resize shortcut: 기존 exploit 차단 3/3
 - partial 이전 full-entry 강화본 fresh AI 풀이: PASS, 19분 50초, 8/10

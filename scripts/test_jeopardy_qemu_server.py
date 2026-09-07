@@ -26,8 +26,16 @@ class CommandTest(unittest.TestCase):
 
         self.assertIn("-monitor", command)
         self.assertEqual(command[command.index("-monitor") + 1], "none")
-        self.assertIn("-nic", command)
-        self.assertEqual(command[command.index("-nic") + 1], "none")
+        self.assertIn("-netdev", command)
+        self.assertEqual(
+            command[command.index("-netdev") + 1],
+            "user,restrict=on,id=kapo_net",
+        )
+        self.assertIn("-device", command)
+        self.assertEqual(
+            command[command.index("-device") + 1],
+            "e1000,netdev=kapo_net",
+        )
         self.assertIn("-virtfs", command)
         self.assertIn("local,path=/tmp/session,", command[command.index("-virtfs") + 1])
         self.assertNotIn("-share", command)

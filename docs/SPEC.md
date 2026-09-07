@@ -46,6 +46,9 @@ black-box 풀이를 요청하며, 방향 1은 폐기하지 않고 후속 hardwar
   전환한다. 참가자 파일은 host에서 실행하지 않는다.
 - participant-controlled emulator를 실제 flag가 있는 guest에서 root로 실행하지
   않는다. 그렇게 하면 exploit 없이 `/flag`를 읽을 수 있어 신뢰 경계가 깨진다.
+- 로컬 launcher와 원격 launcher는 같은 명시적 e1000 PCI 장치를 사용한다. backend는
+  QEMU user networking의 `restrict=on`으로 고정해 guest 발신 외부 연결을 막고,
+  Stage 2 heap layout에 영향을 주는 장치 topology를 두 환경에서 동일하게 유지한다.
 - trusted emulator는 descriptor, disconnect/reconnect, participant가 ioctl 인자로 계산하고
   custom driver가 little-endian으로 직렬화·전송한 transfer context의 역직렬화와 그 값에
   따른 bulk payload 생성만 담당한다.
@@ -66,6 +69,8 @@ black-box 풀이를 요청하며, 방향 1은 폐기하지 않고 후속 hardwar
   AI 풀이 3개는 partial overwrite 구조와 최종 page-cache 목표를 복원했지만
   971초, 1,637초, 1,787초
   cutoff 내 guest flag를 얻지 못했다.
+  로컬·원격 장치 topology 통일 뒤 기존 단일-hole/단일-target organizer exploit은
+  disposable TCP QEMU fresh boot 5/5와 로컬 launcher 1/1을 통과했다.
   `participant-release/`는 방향 1 RP2040 pre-release로 보존한다.
 - Closed unintended shortcut: 세 독립 풀이 모두 helper stage에서 resize로 해제한 live
   pipe ring의 helper `struct page *`와 runtime `page_cache_pipe_buf_ops`를 함께 leak해
@@ -113,6 +118,7 @@ black-box 풀이를 요청하며, 방향 1은 폐기하지 않고 후속 hardwar
   연결 종료나 제한시간 만료 시 해당 QEMU를 종료한다. QEMU monitor와 server
   filesystem은 노출하지 않으며, exploit 하나만 든 세션별 임시 directory를 `/work`로
   전달한 뒤 폐기한다.
+- 로컬과 서버 QEMU의 PCI 장치 topology 및 restricted network backend가 일치한다.
 
 현재 판정은 **RC 기능 구현과 로컬 검증은 PASS, release gate와 대회 운영
 배포는 PENDING**이다.

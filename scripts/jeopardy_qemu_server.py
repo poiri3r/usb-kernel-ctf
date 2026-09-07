@@ -194,7 +194,8 @@ def qemu_command(config, work):
         "-append", "console=ttyS0 panic=-1",
         "-virtfs", f"local,path={work},mount_tag=hostshare,security_model=mapped-xattr,id=hostshare",
         "-monitor", "none",
-        "-nic", "none",
+        "-netdev", "user,restrict=on,id=kapo_net",
+        "-device", "e1000,netdev=kapo_net",
         "-nographic",
         "-no-reboot",
     ]

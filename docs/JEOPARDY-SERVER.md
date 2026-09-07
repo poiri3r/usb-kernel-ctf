@@ -45,6 +45,11 @@ available as `/work/exploit`. Each connection has its own temporary directory
 and QEMU process. Disconnecting, timing out, or stopping the service terminates
 that QEMU and removes the directory.
 
+The launcher keeps an explicit e1000 device so the local and remote PCI layouts
+match. Its QEMU user-network backend uses `restrict=on`, which blocks
+guest-initiated external networking; do not remove or replace these arguments
+without rerunning the Stage 2 cold-boot stability test.
+
 With GNU `base64` and netcat, connect using:
 
 ```sh

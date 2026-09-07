@@ -16,6 +16,13 @@ Updated: 2026-09-07 KST
   serial console as UID 65534. Only the session ELF is shared through `/work`.
 - Public test initramfs and an externally injected server test flag both reached
   `FULL_CHAIN_PASS`. Disconnect and SIGTERM cleanup both passed.
+- Local and TCP launchers now use the same explicit e1000 device with a QEMU
+  `user,restrict=on` backend. This preserves the intended heap layout while
+  blocking guest-initiated external networking. The unchanged single-hole,
+  single-target exploit passed five fresh TCP boots and one local launcher boot.
+- Regression evidence is in `/tmp/kapo-nonic-tcp-1.log`; final TCP evidence is
+  `/tmp/kapo-restricted-final-{1..5}.log`. Every final run reached
+  `PAGE_CACHE_WRITE_PASS`, UID 0, `KAPO{test_flag}`, and `FULL_CHAIN_PASS`.
 - Three independent solves of the prior archive all bypassed the intended seq
   leak by resizing a live helper-backed pipe ring.
 - The target kernel now clears only the old ring freed by `pipe_resize_ring()`.
@@ -83,12 +90,16 @@ Updated: 2026-09-07 KST
 - `kernel/kernel.config`
 - `rootfs/initramfs.cpio.gz`
 - `helper/kapo-helper` (stripped analysis copy)
-- empty `work/`
+- archive `work/` containing only `.gitkeep`
+
+The local checkout currently also has the user's untracked
+`testkernelctf/work/test-full-chain` test binary. It is preserved as user work,
+is not staged, and is explicitly absent from `testkernelctf.tar.xz`.
 
 Archive:
 
 - Path: `testkernelctf.tar.xz`
-- SHA-256: `d36521e3eb6b46f37d448b9a696e3c549f675c2dec62d2eea402e990ed2712ff`
+- SHA-256: `b630c93bfbb129dbc1ab1b761039582037449d6bbca134f19d37a53f919f5456`
 
 Excluded from the Direction 2 archive:
 

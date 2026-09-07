@@ -27,5 +27,7 @@ exec qemu-system-x86_64 \
 	-append "console=ttyS0 panic=-1" \
 	-virtfs local,path="$base_dir/work",mount_tag=hostshare,security_model=mapped-xattr,id=hostshare \
 	-monitor "unix:$monitor_socket,server=on,wait=off" \
+	-netdev user,restrict=on,id=kapo_net \
+	-device e1000,netdev=kapo_net \
 	-nographic \
 	-no-reboot
