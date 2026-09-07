@@ -55,7 +55,8 @@ black-box 풀이를 요청하며, 방향 1은 폐기하지 않고 후속 hardwar
   mount한다. 이는 UID 65534 guest process의 direct read와 root-process inspection을
   막는다. 로컬 participant archive 소유자는 initramfs 자체를 추출할 수 있으므로 emulator
   bytes를 암호학적으로 숨기는 경계는 아니며, 실제 서버 image 비공개 경계와 구분한다.
-- 구현 상태: **Release candidate implemented and runtime validated**.
+- 구현 상태: **Release candidate implementation, local runtime validation,
+  independent review, and Git push complete; production deployment pending**.
   `testkernelctf/`와 `testkernelctf.tar.xz`는 방향 2 배포 후보이며, 재현성 재빌드
   artifact의 TCG cold boot full chain은 5/5다. heap 준비와 live pipe timing 힌트를
   제거한 이전 archive의 독립 AI black-box 풀이는 3/3 성공했다.
@@ -74,7 +75,8 @@ black-box 풀이를 요청하며, 방향 1은 폐기하지 않고 후속 hardwar
   일반 pipe close는 기존대로 entry별 `ops = NULL` 처리 후 ring을 해제하므로 의도한
   helper page-only leak은 유지한다. Stage 2 ioctl은 runtime
   `page_cache_pipe_buf_ops`와 정확히 일치하는 context만 허용해 다른 pipe ops를 쓰는
-  등가 우회도 거부한다. 최종 fresh solve는 close 뒤 stale ops가 0임을 확인하고 helper
+  등가 우회도 거부한다. partial 이전 full-entry 강화본의 fresh solve는 close 뒤
+  stale ops가 0임을 확인하고 helper
   page-only leak, 별도 seq KASLR leak, exact page-cache ops를 모두 사용했다.
 
 ### 두 방향이 공유하는 고정 exploit chain
@@ -111,6 +113,12 @@ black-box 풀이를 요청하며, 방향 1은 폐기하지 않고 후속 hardwar
   연결 종료나 제한시간 만료 시 해당 QEMU를 종료한다. QEMU monitor와 server
   filesystem은 노출하지 않으며, exploit 하나만 든 세션별 임시 directory를 `/work`로
   전달한 뒤 폐기한다.
+
+현재 판정은 **RC 기능 구현과 로컬 검증은 PASS, release gate와 대회 운영
+배포는 PENDING**이다.
+최종 partial archive를 외부 참가자가 완주한 성공 표본은 없으며, 3개 AI 세션은
+partial 구조를 복원했지만 30분 내 flag를 얻지 못했다. 따라서 위 독립
+풀이 완료 기준은 현재 미충족이다.
 
 ## 1. 문제 개요
 
@@ -160,7 +168,8 @@ Jeopardy scoreboard에 제출한다.
 - Kernel: Linux 6.8.x
 - Architecture: x86_64
 - 실행 방식: VM
-- initramfs 사용 여부: TBD
+- initramfs 사용 여부: 사용. 공개 배포본은 `KAPO{test_flag}`, 운영 서버는 private
+  initramfs에 실제 flag를 주입한다.
 
 ### USB input device
 

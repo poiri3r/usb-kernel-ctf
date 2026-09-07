@@ -18,13 +18,14 @@
 | hardware-validation bundle | BUILT | 로컬 `dist/hardware-validation/`, artifact hash 검증 통과 |
 | 참가자 pre-release | BUILD/BOOT PASS | `participant-release/`, Ubuntu 24.04.4, UID 65534 shell 확인 |
 | 실제 RP2040 full chain | NOT TESTED | 보드 연결 후 확인 필요 |
-| 참가자 배포 후보 | PARTIAL RC | root-only guest daemon, 16-byte overwrite, TCG 5/5 |
+| 방향 2 배포본 | RC IMPLEMENTED | root-only guest daemon, 16-byte overwrite, TCG 5/5, 구현 commit push 완료 |
 | 힌트 축소 독립 AI 풀이 | PASS 3/3 | 658초, 823초, 1,026초; median 823초 |
 | 알려진 resize shortcut | BLOCKED 3/3 | 기존 A/B/C exploit 모두 helper leak 단계 실패 |
-| 최종 강화본 fresh AI 풀이 | PASS | 1,190초, 의도 체인, shortcut 없음, 8/10 |
+| partial 이전 full-entry 강화본 풀이 | PASS | 1,190초, 의도 체인, shortcut 없음, 8/10 |
 | partial-overwrite fresh AI 풀이 | NOT SOLVED 0/3 | 971초, 1,637초, 1,787초 cutoff; partial 구조 복원 3/3 |
 
-현재 단계는 **partial-overwrite 배포본의 최종 독립 검토와 push**다.
+현재 단계는 **방향 2 RC 구현 commit `60d0e37` push 완료, release gate와 운영
+배포 미완료**다.
 RP2040 hardware edition은 방향 1로 보존하지만 현재 완료 조건은 아니다.
 
 ## 2026-09-07 — root-only emulator와 Stage 2 partial overwrite
@@ -78,24 +79,25 @@ RP2040 hardware edition은 방향 1로 보존하지만 현재 완료 조건은 �
   거부됐다.
 - organizer harness는 seq readiness FIFO를 grooming 전에 열고 512개 seq object 중
   마지막 128개를 해제한다. QEMU emulator는 32-byte seq configuration을 8개 제공하며
-  hardware mode는 1개를 유지한다. 최종 artifact cold boot 5/5에서 helper page leak,
+  hardware mode는 1개를 유지한다. full-entry 강화 artifact cold boot 5/5에서 helper page leak,
   seq KASLR leak, page-cache overwrite, UID 0, `KAPO{test_flag}`, `FULL_CHAIN_PASS`를
   모두 확인했다.
-- 최종 강화 `testkernelctf.tar.xz` SHA-256은
+- partial 이전 full-entry 강화 `testkernelctf.tar.xz` SHA-256은
   `a5e93a01ff1a4af9d8570cdb9ec660e098d992eced7f0781d83690e055418a66`이다.
 - 동일 입력으로 initramfs와 archive를 각각 다시 빌드해 byte-for-byte 일치를 확인했다.
-- 이전 독립 exploit을 최종 artifact에 맞춘 회귀 실행은 163초에 성공했다. 이 실행은
+- 이전 독립 exploit을 full-entry 강화 artifact에 맞춘 회귀 실행은 163초에 성공했다. 이 실행은
   seq leak을 실제 사용하고 runtime `page_cache_pipe_buf_ops`만 전달했으며, 이미 완성된
   exploit의 적응 시간이므로 신규 black-box 난이도 표본에는 포함하지 않는다.
-- 최종 archive만 받은 fresh 세션 C는 1,190초(19분 50초)에 UID 65534에서
+- full-entry 강화 archive만 받은 fresh 세션 C는 1,190초(19분 50초)에 UID 65534에서
   `KAPO{test_flag}`를 획득했다. 정상 close 뒤 stale ops가 0임을 확인하고 helper page-only
   leak, seq KASLR leak, exact runtime `page_cache_pipe_buf_ops`, Stage 2 overflow와 SUID
   helper page-cache overwrite를 순서대로 사용했다. shortcut은 보고하지 않았고 난이도는
   8/10으로 평가했다.
 - 독립 소스 검토는 신규 쟁점 0이다. pipe ring의 참가자 접근 가능 free 경로에서 resize는
   old ring 전체를 초기화하고 정상 close는 entry별 `ops = NULL` 뒤 해제함을 대조했다.
-  별도 FUSE pipe-buffer 경로는 target config에서 비활성화되어 있다. 강화 archive 신규
-  black-box 풀이는 진행 중이다.
+  별도 FUSE pipe-buffer 경로는 target config에서 비활성화되어 있다. 이후 full-entry
+  강화 archive는 fresh 세션이 1,190초에 의도 체인으로 풀었고, 최종 partial
+  archive는 3개 세션 모두 30분 내 미획득이다.
 
 ## 2026-09-07 — 힌트 축소 후 독립 AI black-box 풀이
 
@@ -119,7 +121,8 @@ RP2040 hardware edition은 방향 1로 보존하지만 현재 완료 조건은 �
   helper `struct page *`와 runtime `page_cache_pipe_buf_ops`를 동시에 leak했다. 따라서
   seq enumeration은 통과했지만 seq pointer/KASLR leak은 사용하지 않았다.
 - 이 표본은 힌트 축소 archive에서도 10~20분 내 풀이가 가능했고, 세 풀이 모두 같은
-  resize shortcut을 사용했음을 보여준다. 강화 archive의 난이도는 재측정 중이다.
+  resize shortcut을 사용했음을 보여준다. 이 shortcut을 차단한 full-entry 표본은
+  8/10, 최종 partial 표본은 8.5/10으로 평가됐다.
 
 ## 2026-09-07 — Jeopardy 서버 운영 방식 확정
 
@@ -213,9 +216,11 @@ RP2040 hardware edition은 방향 1로 보존하지만 현재 완료 조건은 �
 
 ## 남은 작업
 
-1. 최종 diff/source 독립 검토와 commit/push를 완료한다.
-2. 운영 서버에서 실제 flag 파일로 initramfs를 빌드하고 systemd unit을 설치한다.
-3. 방향 1 hardware edition 진행 여부를 이후 결정한다.
+1. 운영 서버에서 실제 flag 파일로 private initramfs를 빌드하고 systemd unit을 설치한다.
+2. 운영 KVM/TCG 경로에서 TCP 업로드, flag 획득, timeout/disconnect cleanup을 smoke test한다.
+3. 현재 SPEC의 release gate를 충족하도록 최종 partial archive를 독립 참가자가
+   완주한 성공 표본을 확보한다. 현재 30분 표본은 0/3이다.
+4. 방향 1 hardware edition 진행 여부를 이후 결정한다.
 
 single-enumeration dual configuration과 physical RP2040 검증은 방향 1의 후속 작업이며
 현재 방향 2 완료 조건이 아니다.
@@ -226,14 +231,14 @@ single-enumeration dual configuration과 physical RP2040 검증은 방향 1의 �
 
 - Jeopardy localhost TCP public/server-test-flag full chain
 - 힌트 축소 archive organizer smoke full chain
-- 변경 archive 독립 AI black-box 풀이 3/3
+- 힌트 축소 archive 독립 AI black-box 풀이 3/3
 - 강화 kernel build와 archive 내부 `SHA256SUMS`
 - 강화 artifact 의도 full chain TCG cold boot 5/5
 - 기존 resize shortcut exploit 차단 3/3
 - 독립 source/diff 검토 신규 쟁점 0
 - 최종 initramfs/archive 재현성 rebuild byte-for-byte 일치
-- 최종 제약에 맞춘 독립 exploit 회귀 flag 획득
-- 최종 archive fresh participant-only 의도 풀이 flag 획득 (1,190초)
+- full-entry 강화 제약에 맞춘 독립 exploit 회귀 flag 획득
+- full-entry 강화 archive fresh participant-only 의도 풀이 flag 획득 (1,190초)
 - client disconnect 및 launcher `SIGTERM` QEMU/session cleanup
 - launcher Python compile과 unit test 3개
 - server-only initramfs test flag 주입 및 `/flag` mode `0400`
@@ -268,25 +273,26 @@ single-enumeration dual configuration과 physical RP2040 검증은 방향 1의 �
 - 현재 후보의 KVM 경로는 NOT TESTED다.
 - 실제 운영 flag는 사용하지 않았으며 외부 test flag 주입 경로만 PASS다.
 - 운영 서버의 systemd runtime과 KVM 경로는 NOT TESTED다.
+- 최종 partial archive의 독립 풀이 성공 표본은 없다. 3개 세션은 구조를 복원했지만
+  971초, 1,637초, 1,787초에 flag 미획득으로 종료했다.
 
 ## Git 상태
 
 - Branch: `main`
-- 이 문서를 포함하는 checkpoint에 full-chain, firmware, bundle build와 문서 변경을
-  함께 기록한다.
+- 방향 2 partial RC 구현·검증 commit은 `60d0e37`이며 `origin/main`으로 push했다.
 - 생성된 `dist/`와 `firmware/build/`은 `.gitignore` 대상이다.
 - `participant-release/`는 방향 1 pre-release로 보존한다.
 - `testkernelctf/`와 `testkernelctf.tar.xz`가 방향 2 배포 후보 산출물이다.
 
 ## 실측 난이도 평가
 
-- AI 허용 환경 판정: **8/10, 상**. 최종 강화본 fresh 성공 표본은 19분 50초였고,
-  이전 10분 58초~17분 06초 표본의 공통 shortcut은 현재 차단됐다.
+- AI 허용 환경 판정: **8.5/10, 상급–매우 어려움**. full-entry 강화본은
+  19분 50초에 풀렸지만, 현재 partial 버전은 30분 내 0/3이다.
 - 사람 중심 판정: **상**. Stage 1 USB core leak과 Stage 2 custom driver overflow를 연결하고,
   KASLR 및 vmemmap 계산, pipe heap grooming, page-cache overwrite까지 참가자 exploit이
   직접 구현해야 한다.
 - 배포 `vmlinux`와 helper는 stripped 상태이고 `System.map`이 없어 정적 분석 부담이 있다.
 - emulator contract와 세 단계 readiness 순서는 공개되므로 USB transport 구현 부담은
   줄지만 kernel heap exploit 난이도는 유지된다.
-- 최종 강화본에서 동급 AI의 현재 실측 성공 시간은 약 20분이다. 표본 수가 1개라 분산과
-  상한은 아직 확정하지 않는다.
+- 현재 partial 버전의 실측 성공 시간은 확정할 수 없다. 3개 모두 cutoff라
+  성공 시간은 30분보다 길 수 있다.

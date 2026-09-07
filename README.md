@@ -8,12 +8,14 @@ USB core의 Stage 1 heap disclosure와 CTF용 custom driver의 Stage 2 heap over
 
 - 현재 우선 개발 방향: QEMU-only software edition
 - 후속 보존 방향: RP2040 hardware edition
-- QEMU-only 배포 후보 `testkernelctf/`와 `testkernelctf.tar.xz`: PARTIAL RC
+- QEMU-only `testkernelctf/`와 `testkernelctf.tar.xz`: DIRECTION 2 RC
+- 구현·artifact·로컬 검증·독립 검토 commit `60d0e37` push: COMPLETE
+- 운영 서버의 실제 flag image/systemd/KVM 검증: NOT DEPLOYED
 - 현재 재현성 재빌드 artifact cold boot full chain 및 test flag: TCG PASS 5/5
 - Jeopardy localhost TCP disposable QEMU와 외부 test flag 주입 full chain: PASS
 - 힌트 축소 배포본 독립 AI black-box 풀이: PASS 3/3, median 13분 43초
 - helper-stage pipe resize shortcut: 기존 exploit 차단 3/3
-- 최종 강화본 fresh AI black-box 의도 풀이: PASS, 19분 50초, 8/10
+- partial 이전 full-entry 강화본 fresh AI 풀이: PASS, 19분 50초, 8/10
 - root-only guest emulator와 16-byte Stage 2 partial overwrite: TCG PASS 5/5
 - partial-overwrite fresh AI black-box 풀이: 30분 내 0/3, partial 구조 복원 3/3
 - Target-equivalent Linux 6.8.12 QEMU full chain: PASS 10/10
@@ -28,7 +30,8 @@ USB core의 Stage 1 heap disclosure와 CTF용 custom driver의 Stage 2 heap over
 시작하되 disconnected 상태로 대기시킨다. 참가자가 UID 65534 guest exploit으로 모든
 heap grooming과 trigger를 수행한다. 현재 재현성 재빌드 후보에서 `KAPO{test_flag}` 획득을
 TCG cold boot 5/5로 확인했다. 이전 힌트 축소 archive를 푼 독립 AI 세션 3/3이 사용한
-helper-stage pipe resize 우회는 강화 kernel에서 차단했으며, 강화 archive의 신규 독립
+helper-stage pipe resize 우회는 강화 kernel에서 차단했으며, partial 이전 full-entry
+강화 archive의 신규 독립
 black-box 풀이는 의도한 helper page-only leak, seq KASLR leak, exact page-cache ops와
 Stage 2 overflow를 사용해 19분 50초에 성공했다.
 
@@ -37,6 +40,9 @@ Stage 2 overflow를 사용해 19분 50초에 성공했다.
 참가자는 initramfs를 추출할 수 있으므로 emulator bytes를 완전히 숨기는 구성은 아니다.
 독립 archive-only AI 세션 3개는 partial overwrite 구조와 최종 목표를 복원했지만
 971초, 1,637초, 1,787초 cutoff 내에 guest flag를 얻지 못했다.
+따라서 현재 산출물은 기능적으로 완성된 release candidate이지만, 최종
+partial 버전의 독립 성공 표본과 실제 운영 배포가 남아 있어 release gate는
+아직 미충족이다.
 
 `dist/hardware-validation/`에 `bzImage`, `vmlinux`, `System.map`, kernel config,
 test initramfs와 `kapo-rp2040.uf2`를 생성했다. 이 디렉터리는 Git에 포함하지 않는 로컬

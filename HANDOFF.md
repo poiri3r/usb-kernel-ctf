@@ -7,6 +7,9 @@ Updated: 2026-09-07 KST
 
 ## Active task
 
+- Direction 2 implementation, local validation, and independent review are
+  complete, and implementation commit `60d0e37` is pushed. Release-gate solve
+  validation and production deployment are the active tasks.
 - The Jeopardy TCP/QEMU launcher and server-only flag injection path are
   implemented and locally runtime validated.
 - One TCP connection uploads one base64 ELF, then receives one disposable QEMU
@@ -22,10 +25,11 @@ Updated: 2026-09-07 KST
   ops regression reaches both leaks and is rejected with `EINVAL`.
 - QEMU seq mode exposes eight equivalent 32-byte configurations so allocator
   noise does not make the intended leak intermittent. Hardware mode stays at one.
-- A previously independent exploit was adapted to the exact final archive in
+- A previously independent exploit was adapted to the pre-partial full-entry
+  hardened archive in
   163 seconds and again obtained the flag using the seq leak and runtime
   `page_cache_pipe_buf_ops`. This is regression time, not a fresh solve sample.
-- A fresh participant-only solve of the exact final archive succeeded in 1,190
+- A fresh participant-only solve of that full-entry archive succeeded in 1,190
   seconds with the intended full-entry chain and no reported shortcut.
 - The current candidate makes the in-guest emulator root-only (`0700` plus
   procfs `hidepid=2`) and reduces QEMU Stage 2 to a 16-byte overwrite of only
@@ -43,7 +47,7 @@ Updated: 2026-09-07 KST
 ## Repository checkpoint
 
 - Branch: `main`
-- Base commit: `6bdaac9`
+- Previous implementation commit: `60d0e37`
 - Remote: private `poiri3r/usb-kernel-ctf`
 - Direction 1 remains preserved in `participant-release/`, `firmware/`, and the
   hardware documentation.
@@ -211,7 +215,7 @@ NOT TESTED / remaining:
   repository, prior exploit, internal source, or validation logs.
 - AI-enabled difficulty: approximately 7/10; observed solve time 10--20 minutes.
 
-## Final hardened black-box results
+## Pre-partial full-entry hardened black-box results
 
 - Fresh session C: PASS in 1,190 seconds (19m50s), difficulty 8/10.
 - It observed stale `ops = 0` after normal pipe close, then used a helper
@@ -228,6 +232,8 @@ NOT TESTED / remaining:
 
 ## Next action
 
-Run the bounded independent diff review, then finish and push the exact
-candidate. The next deployment step is rebuilding the private server image with
-the real flag and installing the instance service.
+Obtain one successful independent solve of the final partial archive to satisfy
+the current release gate. Then build the private initramfs from the real flag on
+the production host, install the launcher and systemd unit, and run one
+end-to-end TCP flag acquisition and cleanup smoke test. The current 30-minute
+solve sample is 0/3.
