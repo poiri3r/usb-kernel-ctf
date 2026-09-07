@@ -20,8 +20,26 @@
 | 실제 RP2040 full chain | NOT TESTED | 보드 연결 후 확인 필요 |
 | 참가자 배포 후보 | VALIDATED RC | `testkernelctf/`와 archive hash 및 TCG 5/5 검증 완료 |
 
-현재 단계는 **방향 2 QEMU-only 배포 후보의 팀원 black-box 풀이 대기**다.
+현재 단계는 **방향 2 참가자 archive 기반 독립 black-box 풀이 및 난이도 평가**다.
 RP2040 hardware edition은 방향 1로 보존하지만 현재 완료 조건은 아니다.
+
+## 2026-09-07 — Jeopardy 서버 운영 방식 확정
+
+- 수동 ticket 검증 대신 challenge TCP 연결마다 disposable QEMU serial console을 제공한다.
+- 참가자는 로컬 배포본에서 exploit을 개발하고 TCP 연결 직후 base64 ELF로 업로드한 뒤
+  원격 UID 65534 shell에서 실행한다.
+- 실제 flag가 든 initramfs는 서버에만 보관하며 QEMU monitor와 host filesystem은
+  참가자에게 노출하지 않는다.
+- `scripts/jeopardy_qemu_server.py`에 표준 라이브러리 기반 TCP/QEMU launcher를 구현했다.
+  동시 실행 상한, session timeout, 연결 종료 시 process-group cleanup을 포함한다.
+- launcher가 생성하는 QEMU에는 session별 exploit directory만 `/work`로 연결되며,
+  monitor와 guest network는 없다. server 종료 시에도 실행 중 QEMU를 정리한다.
+- 외부 flag 파일을 다섯 번째 인자로 받는 server-only initramfs build 경계와 systemd
+  격리 unit을 추가했다. builder는 종료 시 flag가 든 임시 rootfs와 cpio를 삭제한다.
+  실제 운영 flag는 저장소나 배포 archive에 포함하지 않는다.
+- localhost TCP shell에서 public test initramfs와 별도 server test flag initramfs를
+  각각 부팅했다. 두 경우 모두 UID 65534 full chain, UID 0과 flag 획득: PASS.
+- 연결 종료와 launcher `SIGTERM` 뒤 QEMU process 및 session directory cleanup: PASS.
 
 ## 2026-09-07 — QEMU-only 배포 후보
 
@@ -98,7 +116,7 @@ RP2040 hardware edition은 방향 1로 보존하지만 현재 완료 조건은 �
 
 1. 팀원에게 `testkernelctf.tar.xz`만 전달해 LLM 기반 black-box 풀이와 난이도를 확인한다.
 2. 팀원 결과에 따라 참가자 문구와 힌트만 조정한다. exploit chain은 변경하지 않는다.
-3. 실제 대회 flag가 든 initramfs는 운영 직전에 별도로 만들고 배포 저장소에는 추가하지 않는다.
+3. 운영 서버에서 실제 flag 파일로 initramfs를 빌드하고 systemd unit을 설치한다.
 4. 방향 1 hardware edition 진행 여부를 이후 결정한다.
 
 single-enumeration dual configuration과 physical RP2040 검증은 방향 1의 후속 작업이며
@@ -108,6 +126,12 @@ single-enumeration dual configuration과 physical RP2040 검증은 방향 1의 �
 
 ### PASS
 
+- Jeopardy localhost TCP public/server-test-flag full chain
+- client disconnect 및 launcher `SIGTERM` QEMU/session cleanup
+- launcher Python compile과 unit test 3개
+- server-only initramfs test flag 주입 및 `/flag` mode `0400`
+- server-only initramfs build 이후 flag 포함 임시 파일 cleanup
+- systemd unit 정적 검증과 offline security score `4.3 OK`
 - 방향 2 trusted emulator 정적 빌드 (`-Wall -Wextra -Werror`, static, stripped)
 - 방향 2 Linux 6.8.12 kernel rebuild
 - 재현성 재빌드 QEMU-only 후보 full chain TCG cold boot 5/5
@@ -136,7 +160,8 @@ single-enumeration dual configuration과 physical RP2040 검증은 방향 1의 �
 - 실제 RP2040 USB enumeration 및 full chain은 NOT TESTED다.
 - current kernel의 physical USB path와 three-reconnect runtime은 보드가 필요하다.
 - 현재 후보의 KVM 경로는 NOT TESTED다.
-- 실제 flag 주입과 현장 ticket 운영 절차는 미확정이다.
+- 실제 운영 flag는 사용하지 않았으며 외부 test flag 주입 경로만 PASS다.
+- 운영 서버의 systemd runtime과 KVM 경로는 NOT TESTED다.
 
 ## Git 상태
 

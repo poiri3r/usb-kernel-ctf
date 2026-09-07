@@ -23,9 +23,11 @@ black-box 풀이를 요청하며, 방향 1은 폐기하지 않고 후속 hardwar
 - 현재 상태는 firmware build와 host protocol self-test까지 PASS이며 physical
   RP2040 full chain은 NOT TESTED다.
 
-### 방향 2 — QEMU-only software edition (현재 우선순위)
+### 방향 2 — QEMU-only Jeopardy edition (현재 우선순위)
 
-- 참가자 배포와 ticket 검증은 동일한 QEMU target을 사용한다.
+- 참가자는 `KAPO{test_flag}`가 든 공개 QEMU target으로 로컬 exploit을 개발한다.
+- 대회 서버는 TCP 연결마다 실제 flag가 든 동일 target의 disposable QEMU를 시작하고
+  serial console을 참가자에게 전달한다. 수동 ticket 검증은 사용하지 않는다.
 - 운영진이 제공하는 **trusted USB emulator** daemon이 guest 안에서 root로 자동
   시작되지만 처음에는 USB를 연결하지 않고 대기한다. UID 65534 participant exploit이
   helper-page grooming을 마친 뒤 readiness signal을 보내면 `dummy_hcd`와 Raw Gadget을
@@ -37,12 +39,11 @@ black-box 풀이를 요청하며, 방향 1은 폐기하지 않고 후속 hardwar
   끝나고 driver가 bind된 **이후**, 취약한 ioctl을 호출하기 직전에 수행한다.
 - 참가자는 USB emulator나 root process를 제출하지 않고, UID 65534에서 실행할
   guest exploit binary/source만 작성한다.
-- participant release에는 `KAPO{test_flag}`만 둔다. 실제 flag가 든 image는
-  운영진만 보관하며 참가자에게 파일로 전달하지 않는다.
-- 참가자 exploit은 host의 submission directory에서 QEMU의 `/work`로 전달한다.
-  참가자 파일은 host에서 실행하지 않는다.
-- ticket에서는 organizer-owned emulator와 원본 kernel/rootfs만 사용하고,
-  참가자 exploit을 비특권 guest process로 실행한다.
+- participant release에는 `KAPO{test_flag}`만 둔다. 실제 flag가 든 image는 서버에만
+  보관하고 참가자에게 파일로 전달하지 않는다.
+- 참가자는 TCP 연결 직후 base64 ELF 한 줄을 launcher에 전송한다. launcher는 이를
+  세션별 `/work/exploit`로만 저장하고, 이후 같은 연결을 UID 65534 serial shell로
+  전환한다. 참가자 파일은 host에서 실행하지 않는다.
 - participant-controlled emulator를 실제 flag가 있는 guest에서 root로 실행하지
   않는다. 그렇게 하면 exploit 없이 `/flag`를 읽을 수 있어 신뢰 경계가 깨진다.
 - trusted emulator는 descriptor, disconnect/reconnect, participant가 ioctl 인자로 계산하고
@@ -83,6 +84,10 @@ black-box 풀이를 요청하며, 방향 1은 폐기하지 않고 후속 hardwar
   USB emulator contract만 README에 공개한다.
 - 내부 검증 후 팀원이 participant archive만 받아 hardware 없이 독립적으로
   풀이하고 난이도와 누락 파일을 보고한다.
+- server launcher는 TCP 연결마다 base64 ELF 하나를 받은 뒤 새 QEMU를 시작하고,
+  연결 종료나 제한시간 만료 시 해당 QEMU를 종료한다. QEMU monitor와 server
+  filesystem은 노출하지 않으며, exploit 하나만 든 세션별 임시 directory를 `/work`로
+  전달한 뒤 폐기한다.
 
 ## 1. 문제 개요
 
@@ -120,7 +125,10 @@ device node를 등록한 뒤 participant exploit의 ioctl이 두 번째 primitiv
 
 참가자는 KAIST와 포항공대 학생 각 11명으로 구성된 총 2팀이며, 팀별로 서로 다른 방에 배정된다.
 
-참가자는 로컬 환경에서 exploit을 개발하여 `KAPO{test_flag}`를 획득한 후 운영진에게 ticket을 요청할 수 있다. 운영진은 해당 방에 검증용 노트북을 가져가 exploit primitive의 안정성과 실제 flag 획득 가능 여부를 테스트한다.
+참가자는 로컬 환경에서 exploit을 개발해 `KAPO{test_flag}`를 획득한다. 대회에서는
+challenge TCP endpoint에 접속하면 실제 flag가 든 disposable QEMU의 UID 65534 serial
+shell을 받는다. 참가자는 미리 업로드된 `/work/exploit`을 실행하고 획득한 flag를
+Jeopardy scoreboard에 제출한다.
 
 ## 4. 시스템 구성
 ### Host
@@ -391,7 +399,7 @@ allocation의 첫 1024 bytes와 entry 뒤 tail을 zero로 유지하고 byte 1024
   가능해야 한다.
 - target build는 KASLR, SMEP, SMAP을 켜고 KASAN과 SLUB redzone debugging을 끈다.
   QEMU는 우선 1 vCPU와 고정 메모리로 검증한다.
-- 실제 flag와 운영진 검증 이미지는 참가자 배포본과 저장소에 포함하지 않는다.
+- 실제 flag와 server-only initramfs는 참가자 배포본과 저장소에 포함하지 않는다.
 
 ### 참가자에게 제공하지 않는 자료
 

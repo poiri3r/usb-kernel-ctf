@@ -2,8 +2,8 @@
 
 set -eu
 
-if [ "$#" -ne 4 ]; then
-	echo "usage: $0 <ubuntu-base.tar.gz> <static-busybox> <initramfs-output> <helper-output>" >&2
+if [ "$#" -lt 4 ] || [ "$#" -gt 5 ]; then
+	echo "usage: $0 <ubuntu-base.tar.gz> <static-busybox> <initramfs-output> <helper-output> [flag-file]" >&2
 	exit 1
 fi
 
@@ -11,7 +11,21 @@ ubuntu_base=$1
 busybox=$2
 initramfs_output=$3
 helper_output=$4
+flag_file=${5:-}
 project_dir=$(CDPATH= cd -- "$(dirname "$0")/.." && pwd)
+rootfs=
+archive=
+
+cleanup() {
+	status=$?
+	trap - EXIT HUP INT TERM
+	[ -z "$rootfs" ] || rm -rf -- "$rootfs" || :
+	[ -z "$archive" ] || rm -f -- "$archive" "$archive.gz" || :
+	exit "$status"
+}
+trap cleanup EXIT
+trap 'exit 1' HUP INT TERM
+
 rootfs=$(mktemp -d /tmp/kapo-participant-root.XXXXXX)
 archive=$(mktemp /tmp/kapo-participant-initramfs.XXXXXX.cpio)
 source_date_epoch=${SOURCE_DATE_EPOCH:-1788739200}
@@ -22,6 +36,18 @@ for file in "$ubuntu_base" "$busybox"; do
 		exit 1
 	}
 done
+if [ -n "$flag_file" ]; then
+	[ -f "$flag_file" ] || {
+		echo "missing required file: $flag_file" >&2
+		exit 1
+	}
+	flag_pattern='^KAPO\{[^{}[:space:]]+\}$'
+	[ "$(LC_ALL=C grep -Ec "$flag_pattern" "$flag_file")" -eq 1 ] &&
+		! LC_ALL=C grep -Evq "$flag_pattern" "$flag_file" || {
+		echo "flag file must contain exactly one KAPO{...} line" >&2
+		exit 1
+	}
+fi
 [ ! -e "$initramfs_output" ] || {
 	echo "$initramfs_output already exists" >&2
 	exit 1
@@ -44,7 +70,11 @@ gcc -static -Wall -Wextra -Werror -pthread \
 	-o "$rootfs/usr/sbin/kapo-usb-emulator"
 strip --strip-all "$rootfs/usr/sbin/kapo-usb-emulator" "$rootfs/kapo-helper"
 install -m 0755 "$rootfs/kapo-helper" "$helper_output"
-printf '%s\n' 'KAPO{test_flag}' >"$rootfs/flag"
+if [ -n "$flag_file" ]; then
+	install -m 0400 "$flag_file" "$rootfs/flag"
+else
+	printf '%s\n' 'KAPO{test_flag}' >"$rootfs/flag"
+fi
 chmod 4755 "$rootfs/kapo-helper"
 chmod 0400 "$rootfs/flag"
 chmod 1777 "$rootfs/tmp" "$rootfs/work"

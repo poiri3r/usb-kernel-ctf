@@ -5,10 +5,21 @@ after `docs/SPEC.md` and `STATUS.md`.
 
 Updated: 2026-09-07 KST
 
+## Active task
+
+- The Jeopardy TCP/QEMU launcher and server-only flag injection path are
+  implemented and locally runtime validated.
+- One TCP connection uploads one base64 ELF, then receives one disposable QEMU
+  serial console as UID 65534. Only the session ELF is shared through `/work`.
+- Public test initramfs and an externally injected server test flag both reached
+  `FULL_CHAIN_PASS`. Disconnect and SIGTERM cleanup both passed.
+- The next task is an independent black-box solve using only
+  `testkernelctf.tar.xz`, followed by difficulty scoring.
+
 ## Repository checkpoint
 
 - Branch: `main`
-- Base commit: `964fb92`
+- Base commit: `68248a0`
 - Remote: private `poiri3r/usb-kernel-ctf`
 - Direction 1 remains preserved in `participant-release/`, `firmware/`, and the
   hardware documentation.
@@ -60,13 +71,10 @@ Excluded from the Direction 2 archive:
 ## Changed files
 
 - Design and state: `docs/SPEC.md`, `STATUS.md`, `HANDOFF.md`, `README.md`
-- Kernel and runtime: `usb/class/customdriver.c`,
-  `scripts/trusted-usb-emulator.c`, `scripts/participant-init.sh`,
-  `scripts/test-full-chain.c`
-- Reproducible builders: `scripts/build-target-kernel.sh`,
-  `scripts/build-participant-rootfs.sh`, `scripts/build-qemu-release.sh`
-- Release candidate: `testkernelctf.tar.xz` and every tracked file under
-  `testkernelctf/`
+- Server runtime: `scripts/jeopardy_qemu_server.py`,
+  `scripts/test_jeopardy_qemu_server.py`, `deploy/kapo-jeopardy.service`
+- Server flag boundary: `scripts/build-participant-rootfs.sh`,
+  `docs/JEOPARDY-SERVER.md`
 
 ## Reproduction inputs and commands
 
@@ -137,11 +145,22 @@ NOT TESTED / remaining:
 - KVM execution path
 - independent teammate LLM-only black-box solve
 - physical RP2040 full chain
-- real-flag image and event ticket procedure
+- real event flag and production systemd runtime
+
+## Jeopardy runtime verification
+
+- Local TCP public-image full chain: PASS (`/tmp/kapo-jeopardy-local-2.log`).
+- Server test-flag image build: PASS; `/flag` was root-owned mode `0400` and
+  contained only `KAPO{server_injection_test}`.
+- Builder temporary rootfs and cpio cleanup after flag injection: PASS.
+- Server test-flag TCP full chain: PASS
+  (`/tmp/kapo-jeopardy-server-flag.log`).
+- Client disconnect cleanup: PASS. Launcher SIGTERM cleanup: PASS.
+- Python compile and three launcher unit tests: PASS.
 
 ## Next action
 
-Give only `testkernelctf.tar.xz` to teammates for an LLM-only black-box solve.
-Collect solve time, missing-file reports, and unintended shortcuts. Do not send
-this repository, `docs/SPEC.md`, `STATUS.md`, `HANDOFF.md`, or files under
-`scripts/`.
+Perform a fresh black-box solve with only `testkernelctf.tar.xz`. Record the
+solve path, elapsed time, missing information, unintended shortcuts, and
+difficulty. Do not inspect this repository or internal documents during that
+solve.

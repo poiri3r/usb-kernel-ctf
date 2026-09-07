@@ -10,6 +10,7 @@ USB core의 Stage 1 heap disclosure와 CTF용 custom driver의 Stage 2 heap over
 - 후속 보존 방향: RP2040 hardware edition
 - QEMU-only 배포 후보 `testkernelctf/`와 `testkernelctf.tar.xz`: VALIDATED RC
 - 현재 재현성 재빌드 artifact cold boot full chain 및 test flag: TCG PASS 5/5
+- Jeopardy localhost TCP disposable QEMU와 외부 test flag 주입 full chain: PASS
 - Target-equivalent Linux 6.8.12 QEMU full chain: PASS 10/10
 - 비특권 UID 65534에서 UID 0 및 `KAPO{test_flag}` 획득: PASS 10/10
 - 현재 kernel source rebuild 및 hardware initramfs boot smoke: PASS
@@ -35,6 +36,7 @@ test initramfs와 `kapo-rp2040.uf2`를 생성했다. 이 디렉터리는 Git에 
 
 - `docs/SPEC.md`: 확정된 문제 설계와 exploit chain
 - `docs/HARDWARE-VALIDATION.md`: RP2040 flash 및 실제 장치 검증 절차
+- `docs/JEOPARDY-SERVER.md`: server-only flag build 및 격리 서비스 운영 절차
 - `STATUS.md`: 이정표별 진행 상황, 검증 결과와 blocker
 - `HANDOFF.md`: 현재 작업 트리, 검증 한계와 바로 다음 작업
 - `AGENTS.md`: 저장소 작업 규칙과 세션 절차
