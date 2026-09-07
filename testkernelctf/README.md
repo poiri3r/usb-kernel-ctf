@@ -24,12 +24,8 @@ grooming.
 After preparing each stage, write exactly one line to `/tmp/kapo-usb-ready`:
 
 1. `helper` for the first enumeration.
-2. Use the driver's next-stage ioctl, prepare the second-stage heap, then write
-   `seq`.
+2. Use the driver's next-stage ioctl, then write `seq`.
 3. Use the next-stage ioctl again, then write `stage2`.
-
-Prepare the Stage 2 live pipe layout only after the final device has bound and
-immediately before triggering the vulnerable ioctl.
 
 ## Files
 

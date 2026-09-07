@@ -12,16 +12,81 @@
 | 현재 개발 방향 | DIRECTION 2 | QEMU-only software edition을 먼저 완성하고 팀원 풀이 진행 |
 | 방향 2 trusted USB emulator 및 배포본 | RUNTIME PASS | 재현성 재빌드 artifact TCG cold boot 5/5 |
 | 문제 설계 및 QEMU exploit chain | PASS | Linux 6.8.12 target-equivalent 기존 10/10, 현재 후보 5/5 |
-| 현재 kernel source | BUILD PASS | disconnect devnode fix를 포함한 최종 `bzImage` 재빌드 |
+| 현재 kernel source | BUILD PASS | old-ring 초기화, exact pipe ops 검증, devnode fix 포함 |
 | hardware validation initramfs | BOOT PASS | 1 vCPU, 2 GiB QEMU에서 UID 65534 harness 시작 확인 |
 | RP2040 firmware | BUILD PASS | Pico SDK 2.3.1 ARM build와 host protocol self-test 통과 |
 | hardware-validation bundle | BUILT | 로컬 `dist/hardware-validation/`, artifact hash 검증 통과 |
 | 참가자 pre-release | BUILD/BOOT PASS | `participant-release/`, Ubuntu 24.04.4, UID 65534 shell 확인 |
 | 실제 RP2040 full chain | NOT TESTED | 보드 연결 후 확인 필요 |
-| 참가자 배포 후보 | VALIDATED RC | `testkernelctf/`와 archive hash 및 TCG 5/5 검증 완료 |
+| 참가자 배포 후보 | HARDENED RC | resize shortcut 차단 artifact, 의도 체인 TCG 5/5 |
+| 힌트 축소 독립 AI 풀이 | PASS 3/3 | 658초, 823초, 1,026초; median 823초 |
+| 알려진 resize shortcut | BLOCKED 3/3 | 기존 A/B/C exploit 모두 helper leak 단계 실패 |
+| 최종 강화본 fresh AI 풀이 | PASS | 1,190초, 의도 체인, shortcut 없음, 8/10 |
 
-현재 단계는 **방향 2 참가자 archive 기반 독립 black-box 풀이 및 난이도 평가**다.
+현재 단계는 **강화 배포본의 추가 표본 수집과 최종 독립 검토**다.
 RP2040 hardware edition은 방향 1로 보존하지만 현재 완료 조건은 아니다.
+
+## 2026-09-07 — helper-stage resize shortcut 차단
+
+- 원인: `pipe_resize_ring()`이 live `pipe_buffer`를 새 ring에 복사한 뒤 old ring을 그대로
+  해제하여 helper `struct page *`와 runtime `page_cache_pipe_buf_ops`가 kmalloc-1k stale
+  data로 함께 남았다.
+- `kernel-patches/0001-pipe-clear-resized-ring.patch`는 old ring 해제를
+  `kfree_sensitive()`로 바꾼다. `scripts/build-target-kernel.sh`가 exact Linux 6.8.12
+  source에 이 overlay를 idempotent하게 적용한다.
+- 정상 pipe close의 entry release와 `ops = NULL` 경로는 변경하지 않아 helper page-only
+  leak을 유지한다.
+- 강화 kernel build: PASS. 최종 `bzImage` SHA-256은
+  `6dea02044767b603a715d9aba6a3b520b1d374d31e2de3a0785d2044de842eb8`이다.
+- 기존 독립 풀이 A/B/C의 resize shortcut binary는 강화 artifact에서 3/3 helper leak에
+  실패했고 test flag를 얻지 못했다.
+- Stage 2 ioctl은 context ops가 runtime `page_cache_pipe_buf_ops`와 정확히 일치할 때만
+  진행한다. 0x40 낮은 대체 pipe ops를 넣은 회귀 실행은 helper/seq leak 뒤 `EINVAL`로
+  거부됐다.
+- organizer harness는 seq readiness FIFO를 grooming 전에 열고 512개 seq object 중
+  마지막 128개를 해제한다. QEMU emulator는 32-byte seq configuration을 8개 제공하며
+  hardware mode는 1개를 유지한다. 최종 artifact cold boot 5/5에서 helper page leak,
+  seq KASLR leak, page-cache overwrite, UID 0, `KAPO{test_flag}`, `FULL_CHAIN_PASS`를
+  모두 확인했다.
+- 최종 강화 `testkernelctf.tar.xz` SHA-256은
+  `a5e93a01ff1a4af9d8570cdb9ec660e098d992eced7f0781d83690e055418a66`이다.
+- 동일 입력으로 initramfs와 archive를 각각 다시 빌드해 byte-for-byte 일치를 확인했다.
+- 이전 독립 exploit을 최종 artifact에 맞춘 회귀 실행은 163초에 성공했다. 이 실행은
+  seq leak을 실제 사용하고 runtime `page_cache_pipe_buf_ops`만 전달했으며, 이미 완성된
+  exploit의 적응 시간이므로 신규 black-box 난이도 표본에는 포함하지 않는다.
+- 최종 archive만 받은 fresh 세션 C는 1,190초(19분 50초)에 UID 65534에서
+  `KAPO{test_flag}`를 획득했다. 정상 close 뒤 stale ops가 0임을 확인하고 helper page-only
+  leak, seq KASLR leak, exact runtime `page_cache_pipe_buf_ops`, Stage 2 overflow와 SUID
+  helper page-cache overwrite를 순서대로 사용했다. shortcut은 보고하지 않았고 난이도는
+  8/10으로 평가했다.
+- 독립 소스 검토는 신규 쟁점 0이다. pipe ring의 참가자 접근 가능 free 경로에서 resize는
+  old ring 전체를 초기화하고 정상 close는 entry별 `ops = NULL` 뒤 해제함을 대조했다.
+  별도 FUSE pipe-buffer 경로는 target config에서 비활성화되어 있다. 강화 archive 신규
+  black-box 풀이는 진행 중이다.
+
+## 2026-09-07 — 힌트 축소 후 독립 AI black-box 풀이
+
+- participant README에서 second-stage heap 준비와 final bind 이후 live pipe layout timing
+  문구를 삭제하고 readiness signal 이름과 순서만 남겼다.
+- 변경 artifact의 organizer full chain smoke는 UID 65534, UID 0,
+  `KAPO{test_flag}`, `FULL_CHAIN_PASS`: PASS.
+- 변경 archive SHA-256은
+  `b477481489e6c7284c0c211de2ef6b5506ff422907c7963ffa79b39efd61d26e`이다.
+
+| 세션 | 결과 | 시간 | 자체 난이도 | 비고 |
+|---|---|---:|---:|---|
+| A | PASS | 1,026초 | 8/10 | clean VM 2회 성공, seq KASLR leak 우회 |
+| B | PASS | 823초 | 7/10 | fresh boot 재현 PASS, seq KASLR leak 우회 |
+| C | PASS | 658초 | 7/10 | blocker 없음, seq KASLR leak 우회 |
+
+- 3개 독립 세션 평균은 836초(13분 56초), 중앙값은 823초(13분 43초), 범위는
+  658~1,026초다. 세션은 변경 archive만 사용했고 내부 저장소, 기존 exploit과 검증
+  로그를 읽지 않았다.
+- Confirmed shortcut: 세 세션 모두 helper stage에서 resize로 해제한 live pipe ring으로
+  helper `struct page *`와 runtime `page_cache_pipe_buf_ops`를 동시에 leak했다. 따라서
+  seq enumeration은 통과했지만 seq pointer/KASLR leak은 사용하지 않았다.
+- 이 표본은 힌트 축소 archive에서도 10~20분 내 풀이가 가능했고, 세 풀이 모두 같은
+  resize shortcut을 사용했음을 보여준다. 강화 archive의 난이도는 재측정 중이다.
 
 ## 2026-09-07 — Jeopardy 서버 운영 방식 확정
 
@@ -59,8 +124,9 @@ RP2040 hardware edition은 방향 1로 보존하지만 현재 완료 조건은 �
 - 재현성 재빌드한 정확한 artifact로 QEMU 8.2.2, 1 vCPU, 2 GiB, TCG cold boot
   full chain을 5/5회 실행했다. 매 회 UID 65534에서 helper-page leak, KASLR leak,
   page-cache overwrite, UID 0, `KAPO{test_flag}`, `FULL_CHAIN_PASS`를 확인했다.
-- `testkernelctf.tar.xz`를 생성했다. archive SHA-256은
-  `b161e85ed2bba672d4af68c919e838b9b950f2ea94a90997b5082b57bbaeedc8`이다.
+- 최초 `testkernelctf.tar.xz` archive SHA-256은
+  `b161e85ed2bba672d4af68c919e838b9b950f2ea94a90997b5082b57bbaeedc8`이었다.
+  현재 힌트 축소 archive hash는 위 black-box 풀이 절을 따른다.
 
 ## 2026-09-06 — QEMU-only 우선 개발 결정
 
@@ -114,8 +180,8 @@ RP2040 hardware edition은 방향 1로 보존하지만 현재 완료 조건은 �
 
 ## 남은 작업
 
-1. 팀원에게 `testkernelctf.tar.xz`만 전달해 LLM 기반 black-box 풀이와 난이도를 확인한다.
-2. 팀원 결과에 따라 참가자 문구와 힌트만 조정한다. exploit chain은 변경하지 않는다.
+1. 진행 중인 추가 fresh 세션 B의 성공 또는 30분 censored 결과를 기록한다.
+2. 최종 diff/source 검토에서 신규 쟁점 0을 확인한다.
 3. 운영 서버에서 실제 flag 파일로 initramfs를 빌드하고 systemd unit을 설치한다.
 4. 방향 1 hardware edition 진행 여부를 이후 결정한다.
 
@@ -127,6 +193,15 @@ single-enumeration dual configuration과 physical RP2040 검증은 방향 1의 �
 ### PASS
 
 - Jeopardy localhost TCP public/server-test-flag full chain
+- 힌트 축소 archive organizer smoke full chain
+- 변경 archive 독립 AI black-box 풀이 3/3
+- 강화 kernel build와 archive 내부 `SHA256SUMS`
+- 강화 artifact 의도 full chain TCG cold boot 5/5
+- 기존 resize shortcut exploit 차단 3/3
+- 독립 source/diff 검토 신규 쟁점 0
+- 최종 initramfs/archive 재현성 rebuild byte-for-byte 일치
+- 최종 제약에 맞춘 독립 exploit 회귀 flag 획득
+- 최종 archive fresh participant-only 의도 풀이 flag 획득 (1,190초)
 - client disconnect 및 launcher `SIGTERM` QEMU/session cleanup
 - launcher Python compile과 unit test 3개
 - server-only initramfs test flag 주입 및 `/flag` mode `0400`
@@ -156,7 +231,6 @@ single-enumeration dual configuration과 physical RP2040 검증은 방향 1의 �
 
 ### 미검증 또는 제한
 
-- 팀원 LLM black-box 풀이는 NOT TESTED다.
 - 실제 RP2040 USB enumeration 및 full chain은 NOT TESTED다.
 - current kernel의 physical USB path와 three-reconnect runtime은 보드가 필요하다.
 - 현재 후보의 KVM 경로는 NOT TESTED다.
@@ -172,12 +246,15 @@ single-enumeration dual configuration과 physical RP2040 검증은 방향 1의 �
 - `participant-release/`는 방향 1 pre-release로 보존한다.
 - `testkernelctf/`와 `testkernelctf.tar.xz`가 방향 2 배포 후보 산출물이다.
 
-## 예비 난이도 평가
+## 실측 난이도 평가
 
-- 판정: **상**. Stage 1 USB core leak과 Stage 2 custom driver overflow를 연결하고,
+- AI 허용 환경 판정: **8/10, 상**. 최종 강화본 fresh 성공 표본은 19분 50초였고,
+  이전 10분 58초~17분 06초 표본의 공통 shortcut은 현재 차단됐다.
+- 사람 중심 판정: **상**. Stage 1 USB core leak과 Stage 2 custom driver overflow를 연결하고,
   KASLR 및 vmemmap 계산, pipe heap grooming, page-cache overwrite까지 참가자 exploit이
   직접 구현해야 한다.
 - 배포 `vmlinux`와 helper는 stripped 상태이고 `System.map`이 없어 정적 분석 부담이 있다.
 - emulator contract와 세 단계 readiness 순서는 공개되므로 USB transport 구현 부담은
   줄지만 kernel heap exploit 난이도는 유지된다.
-- 최종 난이도와 예상 풀이 시간은 팀원 black-box 결과 후 확정한다.
+- 최종 강화본에서 동급 AI의 현재 실측 성공 시간은 약 20분이다. 표본 수가 1개라 분산과
+  상한은 아직 확정하지 않는다.

@@ -53,8 +53,21 @@ black-box 풀이를 요청하며, 방향 1은 폐기하지 않고 후속 hardwar
   65534 participant exploit이 담당한다.
 - 구현 상태: **Release candidate implemented and runtime validated**.
   `testkernelctf/`와 `testkernelctf.tar.xz`는 방향 2 배포 후보이며, 재현성 재빌드
-  artifact의 TCG cold boot full chain은 5/5다. 팀원 black-box 풀이가 남아 있다.
+  artifact의 TCG cold boot full chain은 5/5다. heap 준비와 live pipe timing 힌트를
+  제거한 이전 archive의 독립 AI black-box 풀이는 3/3 성공했다.
+  shortcut 차단 최종 archive의 fresh participant-only 풀이도 1,190초에 의도 체인으로
+  test flag를 획득했다.
   `participant-release/`는 방향 1 RP2040 pre-release로 보존한다.
+- Closed unintended shortcut: 세 독립 풀이 모두 helper stage에서 resize로 해제한 live
+  pipe ring의 helper `struct page *`와 runtime `page_cache_pipe_buf_ops`를 함께 leak해
+  seq stage의 KASLR leak을 사용하지 않았다. seq enumeration과 stage transition 자체는
+  수행했다. target kernel은 resize가 복사한 old ring을 해제하기 전에 초기화하도록
+  변경했고, 기존 세 shortcut exploit은 강화 artifact에서 3/3 leak 단계에 실패했다.
+  일반 pipe close는 기존대로 entry별 `ops = NULL` 처리 후 ring을 해제하므로 의도한
+  helper page-only leak은 유지한다. Stage 2 ioctl은 runtime
+  `page_cache_pipe_buf_ops`와 정확히 일치하는 context만 허용해 다른 pipe ops를 쓰는
+  등가 우회도 거부한다. 최종 fresh solve는 close 뒤 stale ops가 0임을 확인하고 helper
+  page-only leak, 별도 seq KASLR leak, exact page-cache ops를 모두 사용했다.
 
 ### 두 방향이 공유하는 고정 exploit chain
 
@@ -148,6 +161,8 @@ Jeopardy scoreboard에 제출한다.
 
 - 원본 USB 코드: `usb/`
 - custom driver: `usb/class/customdriver.c`
+- QEMU-only shortcut hardening overlay: `kernel-patches/0001-pipe-clear-resized-ring.patch`
+  (`fs/pipe.c`의 resized old ring만 해제 전 초기화)
 
 ## 5. 현재 확정된 공통 단계
 
@@ -204,8 +219,13 @@ Jeopardy scoreboard에 제출한다.
     `GFP_KERNEL_ACCOUNT`로 할당한다. 해제 뒤 32바이트 configuration allocation으로
     재사용하면 마지막 `show` 함수 포인터인 `proc_single_show`의 상위 7바이트가
     남는다. 하위 1바이트는 알려진 symbol offset으로 복원해 KASLR slide를 계산한다.
+    QEMU-only emulator는 allocator 변동에 대비해 같은 32-byte configuration을 8개
+    제공하며 참가자는 유효한 aligned runtime pointer를 선택한다.
   - pipe 해제 시 `ops`는 NULL이 되므로 freed pipe ring 자체에서는
     `anon_pipe_buf_ops`를 얻지 못한다.
+  - pipe resize는 live entry를 새 ring으로 복사한 뒤 old ring을 해제한다. QEMU-only
+    target은 이 old ring을 `kfree_sensitive()`로 초기화해 helper page와 runtime ops를
+    동시에 남기는 우회를 차단한다. live entry와 정상 close 경로는 바꾸지 않는다.
   - root-owned SUID helper의 executable page를 pipe ring의 세 번째 entry에 `splice()`하고
     alternating ring hole을 8개 configuration allocation으로 재사용하면, canonical,
     64-byte-aligned vmemmap 후보가 configuration offset `0x50`에 반복해서 남는다. harness는
@@ -293,6 +313,11 @@ Jeopardy scoreboard에 제출한다.
   vmemmap `struct page *` 후보가 유출된다. 5/5회 확인했다.
 - [x] 32-byte `seq_operations` grooming으로 `proc_single_show`의 상위 7바이트가
   configuration offset `0x19`에 유출된다. 5/5회 확인했다.
+- [x] resize로 해제된 live pipe ring의 page+ops 동시 유출은 old ring 초기화 후 기존
+  독립 shortcut exploit 3/3에서 차단되고, 의도한 page-only + seq leak full chain은
+  강화 artifact cold boot 5/5를 통과했다.
+- [x] Stage 2 context의 ops를 runtime `page_cache_pipe_buf_ops`로 제한했다. 0x40 낮은
+  대체 pipe ops를 넣은 회귀 실행은 seq leak 뒤 `EINVAL`로 거부됐다.
 - [x] sysfs `descriptors`에서 광고 길이 1024바이트의 configuration tail을
   외부에서 읽을 수 있다.
 - [x] QEMU `dummy_hcd`에서 Stage 1 이후 vendor interface가 생성된다.
@@ -362,6 +387,10 @@ allocation의 첫 1024 bytes와 entry 뒤 tail을 zero로 유지하고 byte 1024
 
 - kmalloc-32 grooming은 기존처럼 해제된 `seq_operations`에서
   `proc_single_show`의 상위 7바이트를 얻는 데 사용한다.
+  organizer harness는 readiness FIFO를 grooming 전에 열고, 512개 중 마지막 128개만
+  연속 해제한 직후 `seq`를 기록한다. QEMU-only emulator는 동일한 32-byte
+  configuration을 8개 제공해 allocator 변동 속에서도 유효한 tail을 선택하게 한다.
+  hardware mode는 기존 1개 configuration contract를 유지한다.
 - kmalloc-1k grooming은 일반 anonymous pipe page가 아니라 SUID helper의 file-backed
   page가 세 번째 `pipe_buffer` entry에 남도록 구성한다. 앞의 두 entries는 25-byte USB
   response가 덮는 영역을 피하기 위한 padding이다. 400개 ring 중 홀수 ring을 해제하고

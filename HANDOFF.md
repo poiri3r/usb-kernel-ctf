@@ -13,13 +13,26 @@ Updated: 2026-09-07 KST
   serial console as UID 65534. Only the session ELF is shared through `/work`.
 - Public test initramfs and an externally injected server test flag both reached
   `FULL_CHAIN_PASS`. Disconnect and SIGTERM cleanup both passed.
-- The next task is an independent black-box solve using only
-  `testkernelctf.tar.xz`, followed by difficulty scoring.
+- Three independent solves of the prior archive all bypassed the intended seq
+  leak by resizing a live helper-backed pipe ring.
+- The target kernel now clears only the old ring freed by `pipe_resize_ring()`.
+  The prior A/B/C shortcut exploits fail 3/3, while the intended page-only + seq
+  leak chain passes hardened cold boot 5/5.
+- The Stage 2 ioctl accepts only runtime `page_cache_pipe_buf_ops`; an alternate
+  ops regression reaches both leaks and is rejected with `EINVAL`.
+- QEMU seq mode exposes eight equivalent 32-byte configurations so allocator
+  noise does not make the intended leak intermittent. Hardware mode stays at one.
+- A previously independent exploit was adapted to the exact final archive in
+  163 seconds and again obtained the flag using the seq leak and runtime
+  `page_cache_pipe_buf_ops`. This is regression time, not a fresh solve sample.
+- A fresh participant-only solve of the exact final archive succeeded in 1,190
+  seconds with the intended chain and no reported shortcut. One additional
+  final-archive session remains in progress.
 
 ## Repository checkpoint
 
 - Branch: `main`
-- Base commit: `68248a0`
+- Base commit: `ff1833a`
 - Remote: private `poiri3r/usb-kernel-ctf`
 - Direction 1 remains preserved in `participant-release/`, `firmware/`, and the
   hardware documentation.
@@ -58,7 +71,7 @@ Updated: 2026-09-07 KST
 Archive:
 
 - Path: `testkernelctf.tar.xz`
-- SHA-256: `b161e85ed2bba672d4af68c919e838b9b950f2ea94a90997b5082b57bbaeedc8`
+- SHA-256: `a5e93a01ff1a4af9d8570cdb9ec660e098d992eced7f0781d83690e055418a66`
 
 Excluded from the Direction 2 archive:
 
@@ -70,11 +83,14 @@ Excluded from the Direction 2 archive:
 
 ## Changed files
 
+- Participant hint surface: `testkernelctf/README.md`
+- Kernel hardening: `kernel-patches/0001-pipe-clear-resized-ring.patch`,
+  `scripts/build-target-kernel.sh`, `usb/class/customdriver.c`
+- Emulator and organizer stability: `scripts/trusted-usb-emulator.c`,
+  `scripts/test-full-chain.c`
+- Release kernel/metadata/artifact: `testkernelctf/kernel/bzImage`,
+  `testkernelctf/kernel/vmlinux`, `testkernelctf/SHA256SUMS`, `testkernelctf.tar.xz`
 - Design and state: `docs/SPEC.md`, `STATUS.md`, `HANDOFF.md`, `README.md`
-- Server runtime: `scripts/jeopardy_qemu_server.py`,
-  `scripts/test_jeopardy_qemu_server.py`, `deploy/kapo-jeopardy.service`
-- Server flag boundary: `scripts/build-participant-rootfs.sh`,
-  `docs/JEOPARDY-SERVER.md`
 
 ## Reproduction inputs and commands
 
@@ -117,9 +133,9 @@ The runtime regression used the current `scripts/test-full-chain.c` linked with
   0xffffffff81329030 0xffffffff822285a0 0x1790
 ```
 
-Logs: `/tmp/kapo-rc-validation-1.log` through
-`/tmp/kapo-rc-validation-5.log`. The temporary exploit was removed from the
-release directory after validation.
+Final intended-chain logs: `/tmp/kapo-final2-intended-1.log` through
+`/tmp/kapo-final2-intended-5.log`. Alternate-ops rejection:
+`/tmp/kapo-final2-wrong-ops.log`.
 
 ## Verification
 
@@ -134,6 +150,15 @@ PASS:
 - the reproducibly rebuilt release candidate passed QEMU 8.2.2, 1 vCPU,
   2 GiB TCG cold boot full chain 5/5; every run reached helper-page leak,
   KASLR leak, page-cache write, UID 0, `KAPO{test_flag}`, and `FULL_CHAIN_PASS`
+- prior A/B/C resize shortcut exploits fail at the helper leak on the hardened
+  kernel (`/tmp/kapo-hardened-shortcut-{a,b,c}.log`)
+- alternate pipe ops reaches the helper and seq leaks but the final ioctl returns
+  `EINVAL` (`/tmp/kapo-final2-wrong-ops.log`)
+- independent source review found zero new issues: resize is the only live-ring
+  free path, normal close clears each entry's `ops`, and the separate FUSE path
+  is disabled in the target config
+- a second rootfs and release build matched the tracked initramfs and archive
+  byte-for-byte
 - `nm` reports no symbols for distributed `vmlinux` and helper
 - `testkernelctf/SHA256SUMS`: PASS
 - initramfs ownership/modes: root-owned flag `0400`, helper `4755`, emulator
@@ -143,7 +168,6 @@ PASS:
 NOT TESTED / remaining:
 
 - KVM execution path
-- independent teammate LLM-only black-box solve
 - physical RP2040 full chain
 - real event flag and production systemd runtime
 
@@ -158,9 +182,34 @@ NOT TESTED / remaining:
 - Client disconnect cleanup: PASS. Launcher SIGTERM cleanup: PASS.
 - Python compile and three launcher unit tests: PASS.
 
+## Hint-reduced black-box results
+
+- Session A: PASS in 1,026 seconds; clean VM 2/2.
+- Session B: PASS in 823 seconds; fresh-boot reproduction PASS.
+- Session C: PASS in 658 seconds; no blocker.
+- All three bypassed the seq KASLR leak by leaking helper page and runtime pipe
+  ops together in the helper stage.
+- Mean: 836 seconds. Median: 823 seconds. Range: 658--1,026 seconds.
+- All three sessions received only the new archive and reported no use of the
+  repository, prior exploit, internal source, or validation logs.
+- AI-enabled difficulty: approximately 7/10; observed solve time 10--20 minutes.
+
+## Final hardened black-box results
+
+- Fresh session C: PASS in 1,190 seconds (19m50s), difficulty 8/10.
+- It observed stale `ops = 0` after normal pipe close, then used a helper
+  page-only descriptor leak, a separate seq callback leak for KASLR, runtime
+  `page_cache_pipe_buf_ops`, Stage 2 overflow, and the SUID helper overwrite.
+- No shortcut was reported. Source SHA-256:
+  `c708284cd2a850ebccf73f073d04232c9f0d58e2de02c292824176f405ac6a42`.
+  Binary SHA-256:
+  `07a136bcaf412052d7eb0da4ab70183f86202c00b71d368eea9798682947ee16`.
+- Evidence: `/tmp/kapo-final-solve-c/REPORT.md` and
+  `/tmp/kapo-final-solve-c/success.log`.
+- Adaptation regression A: PASS in 163 seconds with seq leak and exact
+  page-cache ops; excluded from fresh solve-time scoring.
+
 ## Next action
 
-Perform a fresh black-box solve with only `testkernelctf.tar.xz`. Record the
-solve path, elapsed time, missing information, unintended shortcuts, and
-difficulty. Do not inspect this repository or internal documents during that
-solve.
+Record the remaining final-archive session at its 30-minute cutoff, finish the
+independent source/diff review, then run the bounded session finish script.

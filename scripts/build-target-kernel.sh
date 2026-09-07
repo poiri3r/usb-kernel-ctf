@@ -40,4 +40,14 @@ install -m 0644 "$project_dir/usb/class/Makefile" \
 sed -i 's/\r$//' "$source_dir/drivers/usb/class/Kconfig" \
 	"$source_dir/drivers/usb/class/Makefile"
 
+pipe_patch=$project_dir/kernel-patches/0001-pipe-clear-resized-ring.patch
+if grep -Fq 'kfree_sensitive(pipe->bufs);' "$source_dir/fs/pipe.c"; then
+	:
+elif patch --dry-run --silent --batch --forward -d "$source_dir" -p1 <"$pipe_patch"; then
+	patch --silent --batch --forward -d "$source_dir" -p1 <"$pipe_patch"
+else
+	echo "kernel source does not match the pipe resize hardening patch" >&2
+	exit 1
+fi
+
 make -C "$source_dir" O="$output_dir" -j4 bzImage

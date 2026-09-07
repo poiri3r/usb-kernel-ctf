@@ -4,6 +4,7 @@
 #include <linux/module.h>
 #include <linux/mutex.h>
 #include <linux/slab.h>
+#include <linux/splice.h>
 #include <linux/uaccess.h>
 #include <linux/usb.h>
 
@@ -127,8 +128,9 @@ static long custom_ioctl(struct file *file, unsigned int command,
 		return -ENOTTY;
 	if (copy_from_user(&context, (void __user *)argument, sizeof(context)))
 		return -EFAULT;
-	if (!context.page || !context.ops || context.offset > PAGE_SIZE - 2 ||
-	    context.reserved)
+	if (!context.page ||
+	    context.ops != (unsigned long)&page_cache_pipe_buf_ops ||
+	    context.offset > PAGE_SIZE - 2 || context.reserved)
 		return -EINVAL;
 	wire_context.page = cpu_to_le64(context.page);
 	wire_context.ops = cpu_to_le64(context.ops);

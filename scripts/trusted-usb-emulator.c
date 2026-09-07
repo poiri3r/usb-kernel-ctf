@@ -16,6 +16,7 @@
 #define PIPE_CONFIG_LENGTH 1024
 #define SEQ_CONFIG_LENGTH 32
 #define HELPER_CONFIG_COUNT 8
+#define SEQ_CONFIG_COUNT 8
 #define PAGE_SIZE 4096
 #define RECORD_COUNT 128
 #define RECORD_SIZE 16
@@ -232,8 +233,8 @@ static void run_mode(enum kapo_mode mode)
 	int fd;
 
 	active_mode = mode;
-	device_descriptor.bNumConfigurations =
-		mode == KAPO_MODE_HELPER ? HELPER_CONFIG_COUNT : 1;
+	device_descriptor.bNumConfigurations = mode == KAPO_MODE_HELPER ?
+		HELPER_CONFIG_COUNT : mode == KAPO_MODE_SEQ ? SEQ_CONFIG_COUNT : 1;
 	short_configuration.configuration.wTotalLength = htole16(
 		mode == KAPO_MODE_SEQ ? SEQ_CONFIG_LENGTH : PIPE_CONFIG_LENGTH);
 

