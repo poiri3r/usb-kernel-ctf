@@ -68,6 +68,8 @@ Updated: 2026-09-07 KST
   distributed `vmlinux` and helper are fully stripped.
 - The release contains only `KAPO{test_flag}`; the real flag and organizer
   exploit are not present.
+- `docs/WRITEUP.md` is the internal concise explanation of the intended
+  primitive chain and must remain outside the participant archive.
 
 ## Release-candidate artifacts
 

@@ -54,6 +54,7 @@ test initramfs와 `kapo-rp2040.uf2`를 생성했다. 이 디렉터리는 Git에 
 ## 문서
 
 - `docs/SPEC.md`: 확정된 문제 설계와 exploit chain
+- `docs/WRITEUP.md`: 출제자용 primitive·의도 풀이 핵심 정리
 - `docs/HARDWARE-VALIDATION.md`: RP2040 flash 및 실제 장치 검증 절차
 - `docs/JEOPARDY-SERVER.md`: server-only flag build 및 격리 서비스 운영 절차
 - `STATUS.md`: 이정표별 진행 상황, 검증 결과와 blocker

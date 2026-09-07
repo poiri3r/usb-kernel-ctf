@@ -28,6 +28,14 @@
 배포 미완료**다.
 RP2040 hardware edition은 방향 1로 보존하지만 현재 완료 조건은 아니다.
 
+## 2026-09-07 — 출제자용 write-up 정리
+
+- `docs/WRITEUP.md`에 short configuration disclosure, helper page leak, seq KASLR
+  leak, 16-byte `pipe_buffer` overwrite, page-cache write와 flag 획득 순서를 정리했다.
+- `context.ops`는 exact KASLR 검증용이고 partial payload는 `page/offset/len`만
+  덮어 live `anon_pipe_buf_ops/flags/private`를 보존한다는 구분을 명시했다.
+- 이 문서는 출제자 전용이며 participant archive에 포함하지 않는다.
+
 ## 2026-09-07 — root-only emulator와 Stage 2 partial overwrite
 
 - participant initramfs의 `/usr/sbin/kapo-usb-emulator`를 root-owned mode `0700`으로
