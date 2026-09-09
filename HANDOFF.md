@@ -3,10 +3,13 @@
 This document contains the QEMU-only release-candidate checkpoint. Read it
 after `docs/SPEC.md` and `STATUS.md`.
 
-Updated: 2026-09-07 KST
+Updated: 2026-09-09 KST
 
 ## Active task
 
+- The launcher default, systemd unit, and operator connection example now use
+  the production TCP port `13001`. Server-side restart, listen-state, and
+  external connectivity remain unverified.
 - Direction 2 implementation, local validation, and independent review are
   complete, and implementation commit `60d0e37` is pushed. Release-gate solve
   validation and production deployment are the active tasks.
@@ -53,7 +56,7 @@ Updated: 2026-09-07 KST
 
 ## Repository checkpoint
 
-- Branch: `main`
+- Branch: `fix/jeopardy-port-13001`
 - Previous implementation commit: `60d0e37`
 - Remote: private `poiri3r/usb-kernel-ctf`
 - Direction 1 remains preserved in `participant-release/`, `firmware/`, and the
@@ -111,6 +114,9 @@ Excluded from the Direction 2 archive:
 
 ## Changed files
 
+- Jeopardy public port: `deploy/kapo-jeopardy.service`,
+  `scripts/jeopardy_qemu_server.py`, `scripts/test_jeopardy_qemu_server.py`,
+  `docs/JEOPARDY-SERVER.md`
 - Participant hint surface: `testkernelctf/README.md`
 - Kernel hardening: `kernel-patches/0001-pipe-clear-resized-ring.patch`,
   `scripts/build-target-kernel.sh`, `usb/class/customdriver.c`
