@@ -207,7 +207,7 @@ def parse_args():
         description="Expose one disposable KAPO QEMU serial console per TCP connection."
     )
     parser.add_argument("--bind", default="127.0.0.1")
-    parser.add_argument("--port", type=int, default=31337)
+    parser.add_argument("--port", type=int, default=13001)
     parser.add_argument("--kernel", type=Path,
                         default=project / "testkernelctf/kernel/bzImage")
     parser.add_argument("--initrd", type=Path,

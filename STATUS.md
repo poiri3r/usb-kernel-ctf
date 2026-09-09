@@ -3,7 +3,7 @@
 이 문서는 이정표별 진행 상황과 검증 범위를 기록한다. 작업 재개 순서는
 `docs/SPEC.md` → 이 문서 → `HANDOFF.md`이다.
 
-최종 갱신: 2026-09-07 KST
+최종 갱신: 2026-09-09 KST
 
 ## 현재 요약
 
@@ -27,6 +27,13 @@
 현재 단계는 **방향 2 RC 구현 commit `60d0e37` push 완료, release gate와 운영
 배포 미완료**다.
 RP2040 hardware edition은 방향 1로 보존하지만 현재 완료 조건은 아니다.
+
+## 2026-09-09 — Jeopardy 공개 포트 통일
+
+- 운영 서버의 공개 포트에 맞춰 launcher 기본값, systemd unit과 운영 문서의 TCP
+  접속 포트를 `13001`로 통일했다.
+- launcher unit test와 `git diff --check`: PASS.
+- 실제 운영 서버의 systemd 재시작, listen 상태와 외부 TCP 연결: NOT TESTED.
 
 ## 2026-09-07 — 로컬·원격 QEMU 장치 배치 통일
 

@@ -6,6 +6,7 @@ import importlib.util
 import socket
 import unittest
 from pathlib import Path
+from unittest import mock
 
 
 MODULE_PATH = Path(__file__).with_name("jeopardy_qemu_server.py")
@@ -15,6 +16,16 @@ SPEC.loader.exec_module(SERVER)
 
 
 class CommandTest(unittest.TestCase):
+    def test_default_public_port(self):
+        with mock.patch.object(
+            SERVER.sys,
+            "argv",
+            ["jeopardy_qemu_server.py", "--qemu", "/bin/true"],
+        ):
+            config = SERVER.parse_args()
+
+        self.assertEqual(config.port, 13001)
+
     def test_server_qemu_exposes_only_session_directory(self):
         config = argparse.Namespace(
             accel="tcg",

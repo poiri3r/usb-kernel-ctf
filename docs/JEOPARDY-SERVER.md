@@ -53,7 +53,7 @@ without rerunning the Stage 2 cold-boot stability test.
 With GNU `base64` and netcat, connect using:
 
 ```sh
-{ base64 -w0 ./exploit; printf '\n'; cat; } | nc challenge.example 31337
+{ base64 -w0 ./exploit; printf '\n'; cat; } | nc challenge.example 13001
 ```
 
 Wait for the shell prompt before typing `/work/exploit` and its arguments.
