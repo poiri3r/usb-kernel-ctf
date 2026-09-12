@@ -194,9 +194,8 @@ static void *send_records(void *argument)
 	return NULL;
 }
 
-static void wait_until_ready(const char *path, enum kapo_mode mode)
+static void wait_until_ready(const char *path)
 {
-	static const char *const names[] = { "helper", "seq", "stage2" };
 	char line[32];
 	ssize_t length;
 	int fd;
@@ -212,9 +211,9 @@ static void wait_until_ready(const char *path, enum kapo_mode mode)
 		fail("close readiness signal");
 	if (length && line[length - 1] == '\n')
 		line[length - 1] = '\0';
-	if (strcmp(line, names[mode])) {
-		fprintf(stderr, "expected readiness signal '%s', got '%s'\n",
-			names[mode], line);
+	if (strcmp(line, "ready")) {
+		fprintf(stderr, "expected readiness signal 'ready', got '%s'\n",
+			line);
 		exit(EXIT_FAILURE);
 	}
 }
@@ -310,7 +309,7 @@ stall:
 
 int main(int argc, char **argv)
 {
-	const char *ready_path = "/tmp/kapo-usb-ready";
+	const char *ready_path = "/tmp/yoasobi-ready";
 	int mode;
 
 	if (argc > 2) {
@@ -320,7 +319,7 @@ int main(int argc, char **argv)
 	if (argc == 2)
 		ready_path = argv[1];
 	for (mode = KAPO_MODE_HELPER; mode <= KAPO_MODE_STAGE2; mode++) {
-		wait_until_ready(ready_path, mode);
+		wait_until_ready(ready_path);
 		run_mode(mode);
 	}
 	return EXIT_SUCCESS;

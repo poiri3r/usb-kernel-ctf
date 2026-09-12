@@ -1,0 +1,6 @@
+usb 디렉토리에서 linux 6.8.12에 덮어쓸 완성 파일 5개 (수정된 부분)
+class - customdriver.c : 취약한 드라이버
+class - Kconfig : 커널 설정
+class - Makefile : 드라이버 빌드
+core - config.c : 길이 검증 삭제를 통한 descriptor 취약점 유발
+core - message.c : 커널 heap leak primitive, 원본은 버퍼 전체를 memset으로 초기화, -> USB_DT_CONFIG일때 초기화 생략 -> 짧은 descriptor 이후 힙 leak

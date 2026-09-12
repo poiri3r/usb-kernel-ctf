@@ -1,0 +1,5 @@
+write-up.md : 롸업
+payload.S : /kapo에 page cache에 덮어쓸 코드. 권한 확인 + flag 출력
+exploit.c : 익스 본체
+exploit :  익스
+Makefile : exploit.c와 payload.S를 함께 컴파일·링크해서 정적 ELF인 exploit 만듬
