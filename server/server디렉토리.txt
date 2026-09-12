@@ -1,0 +1,1 @@
+운영 서버 전용 실제 flag가 포함된 initramfs.cpio.gz

@@ -30,8 +30,8 @@ done
 }
 
 mkdir -p "$output/kernel" "$output/rootfs"
-install -m 0644 "$project_dir/participant/testkernelctf/README.md" "$output/README.md"
-install -m 0755 "$project_dir/participant/testkernelctf/run-qemu.sh" "$output/run-qemu.sh"
+install -m 0644 "$project_dir/participant/YOASOBI/README.md" "$output/README.md"
+install -m 0755 "$project_dir/participant/YOASOBI/run-qemu.sh" "$output/run-qemu.sh"
 install -m 0644 "$kernel_output/arch/x86/boot/bzImage" "$output/kernel/bzImage"
 install -m 0644 "$initramfs" "$output/rootfs/initramfs.cpio.gz"
 (

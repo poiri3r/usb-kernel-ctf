@@ -58,7 +58,7 @@ chmod 0755 "$rootfs"
 install -m 0755 "$busybox" "$rootfs/bin/busybox"
 install -m 0755 "$project_dir/scripts/participant-init.sh" "$rootfs/init"
 gcc -static -no-pie -Wall -Wextra -Werror \
-	"$project_dir/helpers/kapo-helper.c" -o "$rootfs/kapo"
+	"$project_dir/scripts/kapo.c" -o "$rootfs/kapo"
 gcc -static -Wall -Wextra -Werror -pthread \
 	"$project_dir/scripts/trusted-usb-emulator.c" \
 	-o "$rootfs/usr/sbin/kapo-usb-emulator"

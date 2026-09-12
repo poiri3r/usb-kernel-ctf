@@ -1,7 +1,7 @@
 # 프로젝트 진행 상태
 
-이 문서는 이정표별 진행 상황과 검증 범위를 기록한다. 작업 재개 순서는
-`docs/SPEC.md` → 이 문서 → `HANDOFF.md`이다.
+이 문서는 QEMU-only YOASOBI 문제의 현재 상태와 검증 결과를 기록한다.
+작업 재개 순서는 `docs/SPEC.md` → 이 문서 → `README.md`이다.
 
 최종 갱신: 2026-09-12 KST
 
@@ -9,359 +9,66 @@
 
 | 범위 | 상태 | 근거와 한계 |
 |---|---|---|
-| 현재 개발 방향 | DIRECTION 2 | QEMU-only software edition을 먼저 완성하고 팀원 풀이 진행 |
-| 방향 2 trusted USB emulator 및 배포본 | RUNTIME PASS | 재현성 재빌드 artifact TCG cold boot 5/5 |
-| 문제 설계 및 QEMU exploit chain | PASS | Linux 6.8.12 target-equivalent 기존 10/10, 현재 후보 5/5 |
-| 현재 kernel source | BUILD PASS | old-ring 초기화, exact pipe ops 검증, devnode fix 포함 |
-| hardware validation initramfs | BOOT PASS | 1 vCPU, 2 GiB QEMU에서 UID 65534 harness 시작 확인 |
-| RP2040 firmware | BUILD PASS | Pico SDK 2.3.1 ARM build와 host protocol self-test 통과 |
-| hardware-validation bundle | BUILT | 로컬 `dist/hardware-validation/`, artifact hash 검증 통과 |
-| 참가자 pre-release | BUILD/BOOT PASS | `participant-release/`, Ubuntu 24.04.4, UID 65534 shell 확인 |
-| 실제 RP2040 full chain | NOT TESTED | 보드 연결 후 확인 필요 |
-| 방향 2 배포본 | RC IMPLEMENTED | root-only guest daemon, 16-byte overwrite, TCG 5/5, 구현 commit push 완료 |
-| 힌트 축소 독립 AI 풀이 | PASS 3/3 | 658초, 823초, 1,026초; median 823초 |
-| 알려진 resize shortcut | BLOCKED 3/3 | 기존 A/B/C exploit 모두 helper leak 단계 실패 |
-| partial 이전 full-entry 강화본 풀이 | PASS | 1,190초, 의도 체인, shortcut 없음, 8/10 |
-| partial-overwrite fresh AI 풀이 | NOT SOLVED 0/3 | 971초, 1,637초, 1,787초 cutoff; partial 구조 복원 3/3 |
-| private 서버 artifact | LOCAL PASS | 실제 flag image direct QEMU 1/1, 기본 경로 TCP launcher 1/1 |
+| 문제 설계와 exploit chain | PASS | Stage 1 leak, Stage 2 16-byte overflow, page-cache overwrite |
+| 참가자 배포본 | PASS | `participant/YOASOBI.tar.gz`, test flag만 포함 |
+| private 서버 image | PASS | 실제 flag full chain 확인 |
+| 원격 Jeopardy endpoint | PASS | Poka PR #13 배포 후 `13.125.248.224:13001` 재검증 |
+| KVM | NOT TESTED | 운영 배포는 TCG 사용 |
 
-현재 단계는 **방향 2 RC 구현 commit `60d0e37` push 완료, release gate와 운영
-배포 미완료**다.
-RP2040 hardware edition은 방향 1로 보존하지만 현재 완료 조건은 아니다.
+## 2026-09-12 — QEMU-only 저장소 정리
 
-## 2026-09-12 — QEMU-only SUID target 배포 단서 축소
+- RP2040 전용 `firmware/`, `participant-release/`, hardware validation 문서·산출물·빌드
+  스크립트를 제거했다.
+- `helpers/kapo-helper.c`는 현재 initramfs 빌드에 필요한 코드이므로
+  `scripts/kapo.c`로 이동하고 builder 참조를 갱신했다.
+- 기존 인계 문서와 session helper를 제거하고 진행 상황을 `STATUS.md`로 일원화했다.
+- 이전 배포 확인용 `배포테스트1/`과 ignored `dist/hardware-validation/`은 휴지통으로
+  이동했다.
 
-- 자동 배포 서버용 artifact를 `kernel/bzImage`와 `server/initramfs.cpio.gz`로
-  분리하고 launcher 기본 경로 및 systemd unit의 `/opt/kapo` 경로와 일치시켰다.
-- 참가자 배포 원본은 `participant/testkernelctf/`, 전달 archive는
-  `participant/testkernelctf.tar.gz`로 분리했다. 서버 runtime은 `participant/`를
-  참조하지 않는다.
-- participant initramfs의 SUID target 이름을 `/kapo-helper`에서 `/kapo`로 변경했다.
-- participant archive의 별도 `helper/kapo-helper` 분석 사본과 `helper/` directory를
-  제거했다. 동일 바이너리는 initramfs 안의 root-owned mode `4755` `/kapo`로 유지한다.
-- rootfs/release builder에서 별도 helper output과 package input을 제거했다.
-- participant 배포 kernel은 `bzImage`만 남기고 별도 `vmlinux`와 kernel config를
-  제거했다. archive의 `work/`와 `.gitkeep`도 제거하고 README는 최소 한국어 안내로
-  교체했다.
-- initramfs 목록, `/kapo` mode `4755`, `/flag` mode `0400`, 배포 `SHA256SUMS`, archive
-  목록과 내부 자료 제외를 검증했다: PASS.
-- 기록된 입력으로 rootfs와 최소 archive를 새로 빌드해 tracked artifact와
-  byte-for-byte 일치를 확인했다: PASS.
-- 이름 변경 및 소문자 test flag 반영 뒤 participant QEMU의 `/kapo` 대상 full exploit
-  chain은 1/1 PASS. UID 65534에서 UID 0, `kapo{test_flag}`와 `FULL_CHAIN_PASS`를
-  확인했다.
-- 공개 flag 형식을 `kapo{...}`로 변경하고 participant initramfs에는
-  `kapo{test_flag}`를 넣었다.
-- private Git용 `server/initramfs.cpio.gz`에는 실제 flag를 넣었으며 raw flag 파일은
-  저장소에 남기지 않았다. SHA-256은
-  `ad693fe14aab27b41e463a05afd09b8cbef339ba5ee0cf35cac7231cb5938c88`이다.
-- 새 최소 `participant/testkernelctf.tar.gz` SHA-256은
-  `1e4bb114135ecf768b500055231bebc74da1cc0a3d54f88cf00e266e3d9ea4a6`이다.
-- private server image를 `kernel/bzImage`와 직접 실행한 full chain은 1/1 PASS이며
-  실제 flag 획득과 `FULL_CHAIN_PASS`를 확인했다.
-- repository-relative 기본 `kernel/`·`server/` 경로로 TCP launcher를 실행하고 ELF
-  upload부터 UID 0 및 `FULL_CHAIN_PASS`까지 확인했다: PASS 1/1.
-- 실제 운영 host의 merge hook, systemd restart, KVM과 외부 TCP 연결은 NOT TESTED.
+## 2026-09-12 — readiness 규약 단순화
 
-## 2026-09-09 — Jeopardy 공개 포트 통일
+- readiness FIFO를 `/tmp/yoasobi-ready`로 바꾸고 세 번 모두 `ready` 한 줄만 받도록
+  emulator, init, 공식 exploit과 참가자 문서를 맞췄다.
+- 이름 변경 뒤 남아 있던 이전 참가자 경로 참조를 `participant/YOASOBI/`로
+  바로잡았다.
+- public/private initramfs와 `participant/YOASOBI.tar.gz`를 다시 생성했다.
+- 수정된 공식 exploit로 public/private TCG full chain을 다시 확인했다: PASS.
+- 참가자 README에서 Stage 수, enumeration과 next-stage ioctl 순서 힌트를 제거했다.
+- Poka PR #13 merge와 deploy workflow 성공 후 현재 endpoint full chain을 확인했다: PASS.
 
-- 운영 서버의 공개 포트에 맞춰 launcher 기본값, systemd unit과 운영 문서의 TCP
-  접속 포트를 `13001`로 통일했다.
-- launcher unit test와 `git diff --check`: PASS.
-- 실제 운영 서버의 systemd 재시작, listen 상태와 외부 TCP 연결: NOT TESTED.
+## 2026-09-12 — 최종 저장소 축소
 
-## 2026-09-07 — 로컬·원격 QEMU 장치 배치 통일
+- 사용하지 않는 전체 upstream USB source 대신 kernel builder가 참조하는 overlay 5개와
+  설명 문서만 `usb/`에 남겼다.
+- 실제 배포와 무관한 기존 운영 unit과 문서를 제거하고 Poka Docker 배포를 기준으로
+  문서를 갱신했다.
+- Poka에 중복된 local launcher와 전용 test, Git session helper를 제거해 `scripts/`에는
+  재빌드에 필요한 6개 파일과 사용법 문서만 남겼다.
 
-- 원격 launcher의 `-nic none`에서는 기존 의도 exploit이 Stage 1 두 leak과 Stage 2
-  ioctl까지 도달한 뒤 `helper page-cache patch did not land`로 실패했다. 같은 binary를
-  기본 NIC 배치에서 실행하면 full chain이 성공해 QEMU 장치 배치 차이를 원인으로
-  확인했다.
-- 로컬 `run-qemu.sh`와 원격 launcher를 모두 명시적 e1000 장치와
-  `user,restrict=on` backend로 통일했다. guest가 외부 연결을 시작하는 것은 차단하면서
-  kmalloc 배치에 영향을 주는 PCI 장치 topology는 동일하게 유지한다.
-- exploit의 단일 hole·단일 live pipe target은 변경하지 않았다. 새 TCP disposable
-  QEMU 5/5와 로컬 `run-qemu.sh` 1/1에서 `PAGE_CACHE_WRITE_PASS`, UID 0,
-  `KAPO{test_flag}`, `FULL_CHAIN_PASS`를 확인했다.
-- launcher unit test는 restricted backend와 e1000 device 인자를 검증하도록 갱신했다.
+## 현재 산출물
 
-## 2026-09-07 — 출제자용 write-up 정리
-
-- `docs/WRITEUP.md`에 short configuration disclosure, helper page leak, seq KASLR
-  leak, 16-byte `pipe_buffer` overwrite, page-cache write와 flag 획득 순서를 정리했다.
-- `context.ops`는 exact KASLR 검증용이고 partial payload는 `page/offset/len`만
-  덮어 live `anon_pipe_buf_ops/flags/private`를 보존한다는 구분을 명시했다.
-- 이 문서는 출제자 전용이며 participant archive에 포함하지 않는다.
-
-## 2026-09-07 — root-only emulator와 Stage 2 partial overwrite
-
-- participant initramfs의 `/usr/sbin/kapo-usb-emulator`를 root-owned mode `0700`으로
-  변경하고 procfs를 `hidepid=2`로 mount했다. UID 65534 guest에서 executable read는
-  `Permission denied`였고 `ps`에 root daemon이 나타나지 않았다.
-- 이 경계는 guest UID 65534에만 적용된다. 공개 local archive 소유자는 initramfs를
-  host에서 추출할 수 있으므로 emulator bytes 자체를 숨기지는 못한다.
-- QEMU trusted emulator의 `record_count`를 65로 줄였다. driver는 520 bytes를 요청해
-  kmalloc-1k object를 받고 1040 bytes를 수신하므로, 다음 `pipe_buffer`의 첫 16 bytes인
-  `page/offset/len`만 overwrite한다.
-- participant는 live anonymous pipe entry의 `anon_pipe_buf_ops`,
-  `PIPE_BUF_FLAG_CAN_MERGE`, `private`를 보존하도록 target을 미리 구성해야 한다.
-- organizer harness cold boot 5/5에서 helper page leak, seq KASLR leak, 16-byte partial
-  overwrite, page-cache write, UID 0, `KAPO{test_flag}`, `FULL_CHAIN_PASS`: PASS.
-- 이전 full-entry fresh exploit은 새 후보에서 1040-byte receive까지 도달했지만 flag를
-  얻지 못했다.
-- 후보 archive SHA-256은
-  `b630c93bfbb129dbc1ab1b761039582037449d6bbca134f19d37a53f919f5456`이다.
-- archive-only 독립 AI 풀이 3개는 971초, 1,637초, 1,787초에 종료했고
-  guest UID 65534 flag를 얻지 못했다. 모두 8–13분 내에 16-byte overwrite의
-  필드와 page-cache overwrite 최종 목표를 복원했지만, Stage 1의 helper-backed
-  `pipe_buffer` page/ops 재사용을 안정화하지 못했다.
-- 세 세션 모두 guest 내 mode `0700`/`hidepid=2`가 emulator 직접 분석을
-  막는 것을 확인했다. 다만 host에서 initramfs를 추출해 emulator와 공개
-  테스트 flag를 읽었으며, 이는 원격 운영 flag를 얻는 exploit로 판정하지 않았다.
-- 난이도 표본은 8.5/10(상급–매우 어려움)이며, 실제 성공 시간은 3개
-  모두 cutoff라서 현재 표본만으로 확정할 수 없다.
-- 독립 검토에서 QEMU partial harness 변경이 `--hardware` full-entry 경로에도
-  적용된 회귀를 찾았다. hardware는 기존 splice target/2048-byte 반환, QEMU는
-  anonymous target/1040-byte 반환으로 분기했고, 수정 후 QEMU cold boot full chain을
-  다시 통과했다.
-
-## 2026-09-07 — helper-stage resize shortcut 차단
-
-- 원인: `pipe_resize_ring()`이 live `pipe_buffer`를 새 ring에 복사한 뒤 old ring을 그대로
-  해제하여 helper `struct page *`와 runtime `page_cache_pipe_buf_ops`가 kmalloc-1k stale
-  data로 함께 남았다.
-- `kernel-patches/0001-pipe-clear-resized-ring.patch`는 old ring 해제를
-  `kfree_sensitive()`로 바꾼다. `scripts/build-target-kernel.sh`가 exact Linux 6.8.12
-  source에 이 overlay를 idempotent하게 적용한다.
-- 정상 pipe close의 entry release와 `ops = NULL` 경로는 변경하지 않아 helper page-only
-  leak을 유지한다.
-- 강화 kernel build: PASS. 최종 `bzImage` SHA-256은
-  `6dea02044767b603a715d9aba6a3b520b1d374d31e2de3a0785d2044de842eb8`이다.
-- 기존 독립 풀이 A/B/C의 resize shortcut binary는 강화 artifact에서 3/3 helper leak에
-  실패했고 test flag를 얻지 못했다.
-- Stage 2 ioctl은 context ops가 runtime `page_cache_pipe_buf_ops`와 정확히 일치할 때만
-  진행한다. 0x40 낮은 대체 pipe ops를 넣은 회귀 실행은 helper/seq leak 뒤 `EINVAL`로
-  거부됐다.
-- organizer harness는 seq readiness FIFO를 grooming 전에 열고 512개 seq object 중
-  마지막 128개를 해제한다. QEMU emulator는 32-byte seq configuration을 8개 제공하며
-  hardware mode는 1개를 유지한다. full-entry 강화 artifact cold boot 5/5에서 helper page leak,
-  seq KASLR leak, page-cache overwrite, UID 0, `KAPO{test_flag}`, `FULL_CHAIN_PASS`를
-  모두 확인했다.
-- partial 이전 full-entry 강화 `testkernelctf.tar.xz` SHA-256은
-  `a5e93a01ff1a4af9d8570cdb9ec660e098d992eced7f0781d83690e055418a66`이다.
-- 동일 입력으로 initramfs와 archive를 각각 다시 빌드해 byte-for-byte 일치를 확인했다.
-- 이전 독립 exploit을 full-entry 강화 artifact에 맞춘 회귀 실행은 163초에 성공했다. 이 실행은
-  seq leak을 실제 사용하고 runtime `page_cache_pipe_buf_ops`만 전달했으며, 이미 완성된
-  exploit의 적응 시간이므로 신규 black-box 난이도 표본에는 포함하지 않는다.
-- full-entry 강화 archive만 받은 fresh 세션 C는 1,190초(19분 50초)에 UID 65534에서
-  `KAPO{test_flag}`를 획득했다. 정상 close 뒤 stale ops가 0임을 확인하고 helper page-only
-  leak, seq KASLR leak, exact runtime `page_cache_pipe_buf_ops`, Stage 2 overflow와 SUID
-  helper page-cache overwrite를 순서대로 사용했다. shortcut은 보고하지 않았고 난이도는
-  8/10으로 평가했다.
-- 독립 소스 검토는 신규 쟁점 0이다. pipe ring의 참가자 접근 가능 free 경로에서 resize는
-  old ring 전체를 초기화하고 정상 close는 entry별 `ops = NULL` 뒤 해제함을 대조했다.
-  별도 FUSE pipe-buffer 경로는 target config에서 비활성화되어 있다. 이후 full-entry
-  강화 archive는 fresh 세션이 1,190초에 의도 체인으로 풀었고, 최종 partial
-  archive는 3개 세션 모두 30분 내 미획득이다.
-
-## 2026-09-07 — 힌트 축소 후 독립 AI black-box 풀이
-
-- participant README에서 second-stage heap 준비와 final bind 이후 live pipe layout timing
-  문구를 삭제하고 readiness signal 이름과 순서만 남겼다.
-- 변경 artifact의 organizer full chain smoke는 UID 65534, UID 0,
-  `KAPO{test_flag}`, `FULL_CHAIN_PASS`: PASS.
-- 변경 archive SHA-256은
-  `b477481489e6c7284c0c211de2ef6b5506ff422907c7963ffa79b39efd61d26e`이다.
-
-| 세션 | 결과 | 시간 | 자체 난이도 | 비고 |
-|---|---|---:|---:|---|
-| A | PASS | 1,026초 | 8/10 | clean VM 2회 성공, seq KASLR leak 우회 |
-| B | PASS | 823초 | 7/10 | fresh boot 재현 PASS, seq KASLR leak 우회 |
-| C | PASS | 658초 | 7/10 | blocker 없음, seq KASLR leak 우회 |
-
-- 3개 독립 세션 평균은 836초(13분 56초), 중앙값은 823초(13분 43초), 범위는
-  658~1,026초다. 세션은 변경 archive만 사용했고 내부 저장소, 기존 exploit과 검증
-  로그를 읽지 않았다.
-- Confirmed shortcut: 세 세션 모두 helper stage에서 resize로 해제한 live pipe ring으로
-  helper `struct page *`와 runtime `page_cache_pipe_buf_ops`를 동시에 leak했다. 따라서
-  seq enumeration은 통과했지만 seq pointer/KASLR leak은 사용하지 않았다.
-- 이 표본은 힌트 축소 archive에서도 10~20분 내 풀이가 가능했고, 세 풀이 모두 같은
-  resize shortcut을 사용했음을 보여준다. 이 shortcut을 차단한 full-entry 표본은
-  8/10, 최종 partial 표본은 8.5/10으로 평가됐다.
-
-## 2026-09-07 — Jeopardy 서버 운영 방식 확정
-
-- 수동 ticket 검증 대신 challenge TCP 연결마다 disposable QEMU serial console을 제공한다.
-- 참가자는 로컬 배포본에서 exploit을 개발하고 TCP 연결 직후 base64 ELF로 업로드한 뒤
-  원격 UID 65534 shell에서 실행한다.
-- 실제 flag가 든 initramfs는 서버에만 보관하며 QEMU monitor와 host filesystem은
-  참가자에게 노출하지 않는다.
-- `scripts/jeopardy_qemu_server.py`에 표준 라이브러리 기반 TCP/QEMU launcher를 구현했다.
-  동시 실행 상한, session timeout, 연결 종료 시 process-group cleanup을 포함한다.
-- launcher가 생성하는 QEMU에는 session별 exploit directory만 `/work`로 연결되며,
-  monitor는 없다. e1000 장치는 로컬과 같은 heap 배치를 위해 유지하되 QEMU user
-  backend의 `restrict=on`으로 guest 발신 네트워크를 차단한다. server 종료 시에도
-  실행 중 QEMU를 정리한다.
-- 외부 flag 파일을 다섯 번째 인자로 받는 server-only initramfs build 경계와 systemd
-  격리 unit을 추가했다. builder는 종료 시 flag가 든 임시 rootfs와 cpio를 삭제한다.
-  실제 운영 flag는 저장소나 배포 archive에 포함하지 않는다.
-- localhost TCP shell에서 public test initramfs와 별도 server test flag initramfs를
-  각각 부팅했다. 두 경우 모두 UID 65534 full chain, UID 0과 flag 획득: PASS.
-- 연결 종료와 launcher `SIGTERM` 뒤 QEMU process 및 session directory cleanup: PASS.
-
-## 2026-09-07 — QEMU-only 배포 후보
-
-- `scripts/trusted-usb-emulator.c`에 세 단계 Raw Gadget emulator를 구현했다. root
-  daemon은 USB transport, descriptor, reconnect, transfer context 역직렬화와 그 값에
-  따른 Stage 2 payload만 담당하며 helper/seq/pipe grooming이나 flag 접근은 하지 않는다.
-- `scripts/participant-init.sh`가 daemon을 root로 시작하고 readiness FIFO를 만든 뒤
-  UID 65534 shell을 연다. 참가자 exploit은 helper/seq grooming과 Stage 2 pipe 준비를
-  모두 직접 수행한다.
-- 첫 방향 2 실행에서 disconnect cleanup의 `custom_devnode()` NULL dereference를
-  재현했고 `mode`가 존재할 때만 권한을 기록하도록 수정했다.
-- Linux 6.8.12 배포 커널을 재빌드하고 `CONFIG_KALLSYMS_ALL`을 비활성화했다.
-  `System.map`은 제외했으며 배포 `vmlinux`와 helper는 `strip --strip-all`을 적용했다.
-- `testkernelctf/`에는 QEMU-only 실행에 필요한 파일만 남겼고 RP2040 firmware,
-  USB passthrough script, organizer exploit/harness와 내부 문서를 제외했다.
-- 고정 build identity와 epoch를 적용해 kernel/rootfs/archive를 다시 만들었다.
-- 재현성 재빌드한 정확한 artifact로 QEMU 8.2.2, 1 vCPU, 2 GiB, TCG cold boot
-  full chain을 5/5회 실행했다. 매 회 UID 65534에서 helper-page leak, KASLR leak,
-  page-cache overwrite, UID 0, `KAPO{test_flag}`, `FULL_CHAIN_PASS`를 확인했다.
-- 최초 `testkernelctf.tar.xz` archive SHA-256은
-  `b161e85ed2bba672d4af68c919e838b9b950f2ea94a90997b5082b57bbaeedc8`이었다.
-  현재 힌트 축소 archive hash는 위 black-box 풀이 절을 따른다.
-
-## 2026-09-06 — QEMU-only 우선 개발 결정
-
-- 방향 2를 먼저 완성해 팀원이 hardware 없이 participant archive만으로 풀도록 한다.
-- 방향 1은 guest exploit과 RP2040 firmware를 함께 제출하는 hardware edition으로
-  보존한다.
-- 방향 2에서는 organizer-owned trusted USB emulator daemon만 root로 실행한다.
-  daemon은 disconnected 상태로 기다리며 UID 65534 participant exploit의 readiness
-  signal 뒤 USB를 연결한다. 참가자는 guest exploit만 제출한다.
-- participant release에는 `KAPO{test_flag}`만 두고 실제 flag image는 운영진만
-  보관한다.
-- 참가자 exploit은 QEMU의 `/work`로 전달하며 host에서는 실행하지 않는다.
-- 기존 Stage 1 leak, Stage 2 overflow와 page-cache overwrite chain은 변경하지 않는다.
-- trusted emulator는 USB transport와 payload만 담당하며 helper/seq/pipe grooming은
-  전부 participant exploit이 수행한다.
-- 현재 `participant-release/`와 hardware bundle은 방향 1 산출물이므로 삭제하거나
-  완료로 재표시하지 않는다.
-
-## 2026-09-06 — 하드웨어 검증 파일 생성
-
-- `firmware/`에 RP2040 USB controller 직접 제어 firmware와 build 절차를 추가했다.
-- firmware는 helper leak, seq leak, Stage 2 세 모드를 제공하며 vendor request `0x5c`마다
-  2초 disconnect 후 다음 모드로 reconnect한다.
-- QEMU host process가 담당하던 helper/seq heap grooming을 guest hardware harness로
-  옮겼다. firmware는 short descriptor, reconnect, transfer context, bulk payload만 맡는다.
-- current `customdriver.c`는 stage transition ioctl, DMA-safe context 전송, per-device
-  transaction mutex, unprivileged device-node mode를 포함한다.
-- Linux 6.8.12 exact target source를 다시 빌드해 `bzImage`, `vmlinux`, `System.map`,
-  kernel config를 생성했다.
-- test initramfs와 RP2040 UF2를 묶어 `dist/hardware-validation/`을 만들고 모든 artifact의
-  `SHA256SUMS`를 확인했다.
-- QEMU boot smoke에서 current kernel의 `kapo_ctf` 등록, initramfs 실행,
-  `HARDWARE_READY`, `EUID_BEFORE=65534`를 확인했다. 물리 USB 동작은 검증 범위 밖이다.
-- `participant-release/`에 exact kernel, Ubuntu 24.04.4 initramfs, helper 분석 사본,
-  QEMU/USB 연결 스크립트, 최소 RP2040 firmware template과 전체 hash를 모았다.
-- 참가자 initramfs는 QEMU에서 Ubuntu 24.04.4, UID/GID 65534, 9p `/work` mount까지
-  확인했다. 내부 full-chain harness와 완성 attack firmware는 포함하지 않는다.
-
-## 이전 완료 이정표
-
-- Stage 1 helper `struct page *`와 `proc_single_show` leak으로 runtime `page`, KASLR slide,
-  `page_cache_pipe_buf_ops`를 계산한다.
-- Stage 2의 2048-byte receive가 1024-byte allocation을 넘어 인접 live helper-backed
-  `pipe_buffer`를 재구성한다.
-- `PIPE_BUF_FLAG_CAN_MERGE` page-cache write로 root-owned mode `4755` helper를 바꾸고,
-  비특권 UID 65534에서 UID 0과 `KAPO{test_flag}`를 획득했다.
-- Linux 6.8.12, KASLR enabled, KASAN/SLUB redzone disabled, 1 vCPU, 2 GiB cold boot
-  10/10회에서 full chain을 확인했다.
-- Stage 1 host model, KASAN Stage 2 overflow, redzone-free adjacency, pipe metadata layout,
-  page-cache write를 각각 검증했다.
-
-## 남은 작업
-
-1. 운영 서버에서 실제 flag 파일로 private initramfs를 빌드하고 systemd unit을 설치한다.
-2. 운영 KVM/TCG 경로에서 TCP 업로드, flag 획득, timeout/disconnect cleanup을 smoke test한다.
-3. 현재 SPEC의 release gate를 충족하도록 최종 partial archive를 독립 참가자가
-   완주한 성공 표본을 확보한다. 현재 30분 표본은 0/3이다.
-4. 방향 1 hardware edition 진행 여부를 이후 결정한다.
-
-single-enumeration dual configuration과 physical RP2040 검증은 방향 1의 후속 작업이며
-현재 방향 2 완료 조건이 아니다.
+- `kernel/bzImage`: 서버와 참가자 공통 커널
+- `server/initramfs.cpio.gz`: private 실제 flag image
+- `participant/YOASOBI/`: 참가자 패키지 수정용 원본
+- `participant/YOASOBI.tar.gz`: 참가자 전달 archive
+- `writeup/`: 공식 풀이, source, payload, 최종 static ELF
 
 ## 검증 기록
 
-### PASS
+PASS:
 
-- Jeopardy localhost TCP public/server-test-flag full chain
-- 힌트 축소 archive organizer smoke full chain
-- 힌트 축소 archive 독립 AI black-box 풀이 3/3
-- 강화 kernel build와 archive 내부 `SHA256SUMS`
-- 강화 artifact 의도 full chain TCG cold boot 5/5
-- 기존 resize shortcut exploit 차단 3/3
-- 독립 source/diff 검토 신규 쟁점 0
-- 최종 initramfs/archive 재현성 rebuild byte-for-byte 일치
-- full-entry 강화 제약에 맞춘 독립 exploit 회귀 flag 획득
-- full-entry 강화 archive fresh participant-only 의도 풀이 flag 획득 (1,190초)
-- client disconnect 및 launcher `SIGTERM` QEMU/session cleanup
-- launcher Python compile과 unit test 3개
-- server-only initramfs test flag 주입 및 `/flag` mode `0400`
-- server-only initramfs build 이후 flag 포함 임시 파일 cleanup
-- systemd unit 정적 검증과 offline security score `4.3 OK`
-- 방향 2 trusted emulator 정적 빌드 (`-Wall -Wextra -Werror`, static, stripped)
-- 방향 2 Linux 6.8.12 kernel rebuild
-- 재현성 재빌드 QEMU-only 후보 full chain TCG cold boot 5/5
-  (UID 65534 → UID 0 → `KAPO{test_flag}`)
-- 고정 identity의 Linux 6.8.12 kernel rebuild
-- 동일 입력 initramfs 2회 byte-for-byte 일치
-- 배포 `vmlinux`와 helper의 symbol table 제거 확인 (`nm`: no symbols)
-- `participant/testkernelctf/SHA256SUMS` 전체 검증
-- archive listing에서 organizer exploit/harness, 내부 문서, RP2040 파일 제외 확인
-- 기존 target-equivalent QEMU full chain 10/10
-- current Linux 6.8.12 `bzImage` rebuild
-- current kernel + hardware initramfs boot smoke
-- RP2040 firmware ARM build
-- descriptor 및 Stage 2 payload host protocol self-test
-- hardware harness `-Wall -Wextra -Werror` static build
-- build/init shell script `sh -n`
-- bundle `SHA256SUMS` 전체 검증
-- 참가자 Ubuntu 24.04.4 initramfs boot, UID/GID 65534와 9p `/work` mount
-- 참가자 firmware template ARM/UF2 build
-- 참가자 폴더에 내부 exploit/harness가 없음을 archive listing으로 확인
-- `git diff --check`, `git diff --cached --check`
+- 최종 `writeup/exploit`: static x86-64 ELF, warnings-as-errors build
+- participant TCG: UID 65534 → page-cache write → UID 0 → `kapo{test_flag}`
+- private TCG: UID 65534 → UID 0 → 실제 flag → `FULL_CHAIN_PASS`
+- Poka PR #13 배포 후 원격 `13.125.248.224:13001`: `PAGE_CACHE_WRITE_PASS`, UID 0,
+  실제 flag, `FULL_CHAIN_PASS`
+- participant archive에 write-up, exploit, 실제 flag가 없음을 확인
 
-### 미검증 또는 제한
+NOT TESTED:
 
-- 실제 RP2040 USB enumeration 및 full chain은 NOT TESTED다.
-- current kernel의 physical USB path와 three-reconnect runtime은 보드가 필요하다.
-- 현재 후보의 KVM 경로는 NOT TESTED다.
-- 실제 운영 flag는 사용하지 않았으며 외부 test flag 주입 경로만 PASS다.
-- 운영 서버의 systemd runtime과 KVM 경로는 NOT TESTED다.
-- 최종 partial archive의 독립 풀이 성공 표본은 없다. 3개 세션은 구조를 복원했지만
-  971초, 1,637초, 1,787초에 flag 미획득으로 종료했다.
+- KVM 실행 경로
+- 팀원이 보고한 cross-cache `struct cred` overwrite 대체 풀이의 현재 산출물 재현
 
-## Git 상태
+## 다음 작업
 
-- Branch: `main`
-- 방향 2 partial RC 구현·검증 commit은 `60d0e37`이며 `origin/main`으로 push했다.
-- 생성된 `dist/`와 `firmware/build/`은 `.gitignore` 대상이다.
-- `participant-release/`는 방향 1 pre-release로 보존한다.
-- `participant/testkernelctf/`와 `participant/testkernelctf.tar.gz`가 방향 2 배포 후보
-  산출물이며, `kernel/bzImage`와 `server/initramfs.cpio.gz`가 private server runtime
-  artifact다.
-
-## 실측 난이도 평가
-
-- AI 허용 환경 판정: **8.5/10, 상급–매우 어려움**. full-entry 강화본은
-  19분 50초에 풀렸지만, 현재 partial 버전은 30분 내 0/3이다.
-- 사람 중심 판정: **상**. Stage 1 USB core leak과 Stage 2 custom driver overflow를 연결하고,
-  KASLR 및 vmemmap 계산, pipe heap grooming, page-cache overwrite까지 참가자 exploit이
-  직접 구현해야 한다.
-- 배포본은 `bzImage`만 제공하고 `vmlinux`, standalone kernel config와 `System.map`을
-  제외해 참가자가 필요한 분석 artifact를 직접 추출해야 한다.
-- emulator contract와 세 단계 readiness 순서는 공개되므로 USB transport 구현 부담은
-  줄지만 kernel heap exploit 난이도는 유지된다.
-- 현재 partial 버전의 실측 성공 시간은 확정할 수 없다. 3개 모두 cutoff라
-  성공 시간은 30분보다 길 수 있다.
+1. 보고된 cross-cache `struct cred` overwrite 풀이를 허용할지 완화할지 결정한다.
