@@ -8,7 +8,7 @@ release.
 
 - `kapo-rp2040.uf2`: RP2040 Zero firmware
 - `bzImage`, `vmlinux`, `System.map`, `kernel.config`: Linux 6.8.12 target
-- `initramfs.cpio.gz`: test rootfs with `KAPO{test_flag}` and the hardware harness
+- `initramfs.cpio.gz`: test rootfs with `kapo{test_flag}` and the hardware harness
 - `SHA256SUMS`: bundle hashes
 
 ## Flash
@@ -33,7 +33,7 @@ repeats once more in Stage 2 mode. Success ends with:
 
 ```text
 PAGE_CACHE_WRITE_PASS
-KAPO{test_flag}
+kapo{test_flag}
 FULL_CHAIN_PASS
 HARDWARE_FULL_CHAIN_PASS
 ```

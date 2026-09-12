@@ -35,7 +35,7 @@ No completed exploit or working attack firmware is included.
 5. Use the USB descriptor disclosure and `/dev/kapo_ctf0` to obtain UID 0 and
    read `/flag`.
 
-The local success value is `KAPO{test_flag}`. Ticket validation uses the same
+The local success value is `kapo{test_flag}`. Ticket validation uses the same
 kernel, configuration, driver, helper, and rootfs layout with a different flag.
 
 ## Ticket submission

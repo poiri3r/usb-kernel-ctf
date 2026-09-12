@@ -13,7 +13,7 @@ black-box 풀이를 요청하며, 방향 1은 폐기하지 않고 후속 hardwar
 ### 방향 1 — RP2040 hardware edition (보존)
 
 - 참가자는 guest exploit과 RP2040 firmware를 함께 작성한다.
-- 로컬에서 `KAPO{test_flag}`를 획득한 뒤 firmware/source, guest exploit/source,
+- 로컬에서 `kapo{test_flag}`를 획득한 뒤 firmware/source, guest exploit/source,
   실행 절차와 hash를 ticket으로 제출한다.
 - 운영진은 실제 flag가 든 disposable QEMU guest에서 참가자 exploit을 비특권으로
   먼저 실행하고, 참가자가 가져온 RP2040을 연결해 검증한다.
@@ -25,7 +25,7 @@ black-box 풀이를 요청하며, 방향 1은 폐기하지 않고 후속 hardwar
 
 ### 방향 2 — QEMU-only Jeopardy edition (현재 우선순위)
 
-- 참가자는 `KAPO{test_flag}`가 든 공개 QEMU target으로 로컬 exploit을 개발한다.
+- 참가자는 `kapo{test_flag}`가 든 공개 QEMU target으로 로컬 exploit을 개발한다.
 - 대회 서버는 TCP 연결마다 실제 flag가 든 동일 target의 disposable QEMU를 시작하고
   serial console을 참가자에게 전달한다. 수동 ticket 검증은 사용하지 않는다.
 - 운영진이 제공하는 **trusted USB emulator** daemon이 guest 안에서 root로 자동
@@ -39,8 +39,9 @@ black-box 풀이를 요청하며, 방향 1은 폐기하지 않고 후속 hardwar
   끝나고 driver가 bind된 **이후**, 취약한 ioctl을 호출하기 직전에 수행한다.
 - 참가자는 USB emulator나 root process를 제출하지 않고, UID 65534에서 실행할
   guest exploit binary/source만 작성한다.
-- participant release에는 `KAPO{test_flag}`만 둔다. 실제 flag가 든 image는 서버에만
-  보관하고 참가자에게 파일로 전달하지 않는다.
+- participant release에는 `kapo{test_flag}`만 둔다. 실제 flag가 든 image는 서버에만
+  보관하고 참가자에게 파일로 전달하지 않는다. private Git 저장소에는 서버 배포용
+  `server/initramfs.cpio.gz`를 둘 수 있다.
 - 참가자는 TCP 연결 직후 base64 ELF 한 줄을 launcher에 전송한다. launcher는 이를
   세션별 `/work/exploit`로만 저장하고, 이후 같은 연결을 UID 65534 serial shell로
   전환한다. 참가자 파일은 host에서 실행하지 않는다.
@@ -60,7 +61,8 @@ black-box 풀이를 요청하며, 방향 1은 폐기하지 않고 후속 hardwar
   bytes를 암호학적으로 숨기는 경계는 아니며, 실제 서버 image 비공개 경계와 구분한다.
 - 구현 상태: **Release candidate implementation, local runtime validation,
   independent review, and Git push complete; production deployment pending**.
-  `testkernelctf/`와 `testkernelctf.tar.xz`는 방향 2 배포 후보이며, 재현성 재빌드
+  `participant/testkernelctf/`와 `participant/testkernelctf.tar.gz`는 방향 2 배포
+  후보이며, 재현성 재빌드
   artifact의 TCG cold boot full chain은 5/5다. heap 준비와 live pipe timing 힌트를
   제거한 이전 archive의 독립 AI black-box 풀이는 3/3 성공했다.
   full-entry overwrite 강화 archive의 fresh participant-only 풀이도 1,190초에 의도
@@ -105,13 +107,14 @@ black-box 풀이를 요청하며, 방향 1은 폐기하지 않고 후속 hardwar
 - emulator binary에는 helper/seq/pipe grooming이나 flag 접근 기능이 없고 모든
   exploit primitive 준비는 UID 65534 participant exploit이 수행한다.
 - participant exploit은 `/work`에서 UID 65534로 실행되며 organizer harness나
-  solve 없이 `KAPO{test_flag}`를 획득할 수 있다.
+  solve 없이 `kapo{test_flag}`를 획득할 수 있다.
 - 사용자 지정 안정성 범위인 cold boot 5/5에서 full chain이 성공한다.
 - 배포 archive에 이 문서, `STATUS.md`, `HANDOFF.md`, organizer exploit/harness,
   실제 flag가 포함되지 않는다.
-- final release에서 `System.map`을 제외하고 `vmlinux` ELF symbol/debug table과 helper
-  symbol을 strip한다. `CONFIG_KALLSYMS_ALL`은 비활성화하며 참가자에게 필요한 최소
-  USB emulator contract만 README에 공개한다.
+- final release에서 `System.map`, `vmlinux`와 별도 kernel config를 제외하고
+  `bzImage`만 제공한다. initramfs의 SUID target symbol을 strip하고
+  `CONFIG_KALLSYMS_ALL`은 비활성화하며 참가자에게 필요한 최소 USB emulator contract만
+  README에 공개한다.
 - 내부 검증 후 팀원이 participant archive만 받아 hardware 없이 독립적으로
   풀이하고 난이도와 누락 파일을 보고한다.
 - server launcher는 TCP 연결마다 base64 ELF 하나를 받은 뒤 새 QEMU를 시작하고,
@@ -134,7 +137,7 @@ partial 구조를 복원했지만 30분 내 flag를 얻지 못했다. 따라서 
 - 실행 환경: Ubuntu 24.04 + Linux Kernel 6.8
 - 공격 입력 장치: 방향 1은 RP2040 Zero, 방향 2는 organizer-owned trusted Raw Gadget
   emulator
-- 플래그 형식: `KAPO{...}`
+- 플래그 형식: `kapo{...}`
 
 ### 한 줄 설명
 
@@ -162,7 +165,7 @@ device node를 등록한 뒤 participant exploit의 ioctl이 두 번째 primitiv
 
 참가자는 KAIST와 포항공대 학생 각 11명으로 구성된 총 2팀이며, 팀별로 서로 다른 방에 배정된다.
 
-참가자는 로컬 환경에서 exploit을 개발해 `KAPO{test_flag}`를 획득한다. 대회에서는
+참가자는 로컬 환경에서 exploit을 개발해 `kapo{test_flag}`를 획득한다. 대회에서는
 challenge TCP endpoint에 접속하면 실제 flag가 든 disposable QEMU의 UID 65534 serial
 shell을 받는다. 참가자는 미리 업로드된 `/work/exploit`을 실행하고 획득한 flag를
 Jeopardy scoreboard에 제출한다.
@@ -174,7 +177,7 @@ Jeopardy scoreboard에 제출한다.
 - Kernel: Linux 6.8.x
 - Architecture: x86_64
 - 실행 방식: VM
-- initramfs 사용 여부: 사용. 공개 배포본은 `KAPO{test_flag}`, 운영 서버는 private
+- initramfs 사용 여부: 사용. 공개 배포본은 `kapo{test_flag}`, 운영 서버는 private
   initramfs에 실제 flag를 주입한다.
 
 ### USB input device
@@ -372,7 +375,7 @@ Jeopardy scoreboard에 제출한다.
 - [x] QEMU-only 16-byte overflow로 `page/offset/len`만 바꾸고 live anonymous entry의
   `anon_pipe_buf_ops`, `PIPE_BUF_FLAG_CAN_MERGE`, `private`를 보존해 helper page cache를
   덮어쓴다. cold boot 5/5로 확인했다.
-- [x] 변조한 SUID helper 실행으로 UID 0을 획득하고 `KAPO{test_flag}`를 읽는다.
+- [x] 변조한 SUID helper 실행으로 UID 0을 획득하고 `kapo{test_flag}`를 읽는다.
 - [ ] 32-byte와 1024-byte configuration을 한 장치의 두 configuration으로 제공해
   한 번의 연결에서 두 leak을 얻을 수 있다.
 - [x] target-equivalent QEMU에서 두 primitive로 연속 10회 권한 상승할 수 있다.
@@ -475,12 +478,13 @@ KASLR 검증에 사용되지만 partial USB payload에는 복사되지 않는다
 - 내부 하드웨어 검증용으로 위 kernel artifact, test initramfs와 RP2040 UF2를 묶은
   `dist/hardware-validation/`을 생성했다. 실제 장치 검증 전이므로 참가자 최종 배포본은
   아니다.
-- rootfs에는 `KAPO{test_flag}`를 담은 root-owned mode `0400`의 `/flag`와 root-owned
+- rootfs에는 `kapo{test_flag}`를 담은 root-owned mode `0400`의 `/flag`와 root-owned
   mode `4755`의 SUID helper를 둔다. `/dev/kapo_ctf0`은 일반 참가자 계정에서 접근
   가능해야 한다.
 - target build는 KASLR, SMEP, SMAP을 켜고 KASAN과 SLUB redzone debugging을 끈다.
   QEMU는 우선 1 vCPU와 고정 메모리로 검증한다.
-- 실제 flag와 server-only initramfs는 참가자 배포본과 저장소에 포함하지 않는다.
+- 실제 flag와 server-only initramfs는 방향 1 참가자 배포본에 포함하지 않는다.
+  방향 2의 private Git 저장소에는 `server/initramfs.cpio.gz`만 둘 수 있다.
 
 ### 참가자에게 제공하지 않는 자료
 

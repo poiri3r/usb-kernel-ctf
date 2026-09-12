@@ -1,6 +1,6 @@
 # KAPO USB Kernel CTF — Organizer Write-up
 
-> 이 문서는 출제자용 핵심 풀이다. `testkernelctf.tar.xz`에 포함하지 않는다.
+> 이 문서는 출제자용 핵심 풀이다. `participant/testkernelctf.tar.gz`에 포함하지 않는다.
 
 ## 1. 한 줄 요약
 
@@ -152,7 +152,7 @@ exec SUID helper -> UID 0 -> read /flag
 
 ## 6. 배포와 현재 판정
 
-- 로컬 배포본은 `KAPO{test_flag}`를 넣은 QEMU다.
+- 로컬 배포본은 `kapo{test_flag}`를 넣은 QEMU다.
 - 대회에서는 TCP로 base64 ELF를 받고, 실제 flag가 든 disposable QEMU의
   UID 65534 serial shell을 같은 연결에 제공한다.
 - organizer chain은 TCG cold boot 5/5에서 test flag를 획득했다. 로컬·원격을 같은

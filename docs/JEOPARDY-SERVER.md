@@ -3,24 +3,39 @@
 This internal document describes the server-only flag boundary and the
 disposable QEMU TCP service. Do not include it in the participant archive.
 
+## Repository layout
+
+The deployment checkout must preserve these repository-relative paths:
+
+- `kernel/bzImage`: server kernel
+- `server/initramfs.cpio.gz`: private server image containing the real flag
+- `scripts/jeopardy_qemu_server.py`: TCP/QEMU launcher
+- `deploy/kapo-jeopardy.service`: systemd unit template
+
+The committed unit expects the checkout at `/opt/kapo`. A merge deployment may
+restart the service directly from that checkout; the launcher defaults resolve
+to the same `kernel/` and `server/` paths. `participant/` is packaging input and
+is not read by the running service.
+
 ## Build the server initramfs
 
-Keep the real flag outside the repository and pass its path as the fifth
-argument. The builder accepts exactly one `KAPO{...}` line. Omitting the fifth
-argument produces the public `KAPO{test_flag}` image.
+Keep the raw flag file outside the repository and pass its path as the fourth
+argument. The builder accepts exactly one `kapo{...}` line. The resulting
+`server/initramfs.cpio.gz` may be committed only to the private server
+repository. Omitting the fourth argument produces the public
+`kapo{test_flag}` image.
 
 ```sh
 ./scripts/build-participant-rootfs.sh \
   /secure/ubuntu-base-24.04.4-base-amd64.tar.gz \
   /secure/busybox \
-  /secure/kapo-server-initramfs.cpio.gz \
-  /secure/kapo-helper \
+  server/initramfs.cpio.gz \
   /secure/flag
 ```
 
-Only `bzImage` and the resulting server initramfs need to be installed below
-`/opt/kapo`. Never copy the flag file, participant archive, repository, build
-tree, organizer exploit, or credentials into that directory.
+Never copy the raw flag file, organizer exploit, build tree, or credentials
+into the deployment checkout. The compressed server initramfs is the only
+committed file that contains the real flag.
 
 ## Install the service
 

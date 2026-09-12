@@ -25,6 +25,11 @@ class CommandTest(unittest.TestCase):
             config = SERVER.parse_args()
 
         self.assertEqual(config.port, 13001)
+        self.assertEqual(config.kernel, MODULE_PATH.parent.parent / "kernel/bzImage")
+        self.assertEqual(
+            config.initrd,
+            MODULE_PATH.parent.parent / "server/initramfs.cpio.gz",
+        )
 
     def test_server_qemu_exposes_only_session_directory(self):
         config = argparse.Namespace(

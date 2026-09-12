@@ -3,10 +3,13 @@
 This document contains the QEMU-only release-candidate checkpoint. Read it
 after `docs/SPEC.md` and `STATUS.md`.
 
-Updated: 2026-09-09 KST
+Updated: 2026-09-12 KST
 
 ## Active task
 
+- The automatic-deployment runtime is split into `kernel/bzImage` and
+  `server/initramfs.cpio.gz`. The editable participant source and archive are
+  under `participant/`; the running server does not read them.
 - The launcher default, systemd unit, and operator connection example now use
   the production TCP port `13001`. Server-side restart, listen-state, and
   external connectivity remain unverified.
@@ -19,6 +22,13 @@ Updated: 2026-09-09 KST
   serial console as UID 65534. Only the session ELF is shared through `/work`.
 - Public test initramfs and an externally injected server test flag both reached
   `FULL_CHAIN_PASS`. Disconnect and SIGTERM cleanup both passed.
+- The final lowercase public image reached UID 0, `kapo{test_flag}`, and
+  `FULL_CHAIN_PASS` in direct QEMU 1/1. The committed private server image
+  reached UID 0, the real flag, and `FULL_CHAIN_PASS` in direct QEMU 1/1.
+- The TCP launcher used its default repository-relative `kernel/` and `server/`
+  artifacts and passed upload-to-`FULL_CHAIN_PASS` end to end 1/1. Production
+  merge automation, systemd restart, KVM, and external connectivity are still
+  not tested.
 - Local and TCP launchers now use the same explicit e1000 device with a QEMU
   `user,restrict=on` backend. This preserves the intended heap layout while
   blocking guest-initiated external networking. The unchanged single-hole,
@@ -56,12 +66,13 @@ Updated: 2026-09-09 KST
 
 ## Repository checkpoint
 
-- Branch: `fix/jeopardy-port-13001`
+- Branch: `release/server-participant-layout`
 - Previous implementation commit: `60d0e37`
 - Remote: private `poiri3r/usb-kernel-ctf`
 - Direction 1 remains preserved in `participant-release/`, `firmware/`, and the
   hardware documentation.
-- Direction 2 release candidate: `testkernelctf/` and `testkernelctf.tar.xz`.
+- Direction 2 release candidate: `participant/testkernelctf/` and
+  `participant/testkernelctf.tar.gz`.
 
 ## Current outcome
 
@@ -74,42 +85,43 @@ Updated: 2026-09-09 KST
   exploit triggers remain in the UID 65534 participant process.
 - The Linux 6.8.12 release-candidate kernel includes the `custom_devnode()` disconnect NULL
   guard found during final QEMU testing.
-- `CONFIG_KALLSYMS_ALL` is disabled. `System.map` is not distributed. The
-  distributed `vmlinux` and helper are fully stripped.
-- The release contains only `KAPO{test_flag}`; the real flag and organizer
+- `CONFIG_KALLSYMS_ALL` is disabled. `System.map`, `vmlinux`, and the standalone
+  kernel config are not distributed. The initramfs `/kapo` target is stripped.
+- The release contains only `kapo{test_flag}`; the real flag and organizer
   exploit are not present.
+- The private repository contains `server/initramfs.cpio.gz` with the real flag;
+  the raw flag file is not stored in the repository.
 - `docs/WRITEUP.md` is the internal concise explanation of the intended
   primitive chain and must remain outside the participant archive.
 
 ## Release-candidate artifacts
 
-`testkernelctf/` contains:
+`participant/testkernelctf/` contains:
 
 - `README.md`
 - `SHA256SUMS`
 - `run-qemu.sh`
 - `kernel/bzImage`
-- `kernel/vmlinux` (stripped)
-- `kernel/kernel.config`
 - `rootfs/initramfs.cpio.gz`
-- `helper/kapo-helper` (stripped analysis copy)
-- archive `work/` containing only `.gitkeep`
 
 The local checkout currently also has the user's untracked
 `testkernelctf/work/test-full-chain` test binary. It is preserved as user work,
-is not staged, and is explicitly absent from `testkernelctf.tar.xz`.
+is not staged, and is explicitly absent from `participant/testkernelctf.tar.gz`.
 
 Archive:
 
-- Path: `testkernelctf.tar.xz`
-- SHA-256: `b630c93bfbb129dbc1ab1b761039582037449d6bbca134f19d37a53f919f5456`
+- Path: `participant/testkernelctf.tar.gz`
+- SHA-256: `1e4bb114135ecf768b500055231bebc74da1cc0a3d54f88cf00e266e3d9ea4a6`
+- Private server initramfs SHA-256:
+  `ad693fe14aab27b41e463a05afd09b8cbef339ba5ee0cf35cac7231cb5938c88`
 
 Excluded from the Direction 2 archive:
 
 - `docs/SPEC.md`, `STATUS.md`, `HANDOFF.md`
 - organizer full-chain exploit and harness
 - RP2040 firmware/template and USB passthrough scripts
-- `System.map`
+- `System.map`, `vmlinux`, standalone kernel config, and separate helper copy
+- archive `work/` directory; `run-qemu.sh` creates it locally
 - real flag, secrets, and credentials
 
 ## Changed files
@@ -117,14 +129,16 @@ Excluded from the Direction 2 archive:
 - Jeopardy public port: `deploy/kapo-jeopardy.service`,
   `scripts/jeopardy_qemu_server.py`, `scripts/test_jeopardy_qemu_server.py`,
   `docs/JEOPARDY-SERVER.md`
-- Participant hint surface: `testkernelctf/README.md`
+- Participant hint surface: `participant/testkernelctf/README.md`
 - Kernel hardening: `kernel-patches/0001-pipe-clear-resized-ring.patch`,
   `scripts/build-target-kernel.sh`, `usb/class/customdriver.c`
 - Emulator and organizer stability: `scripts/trusted-usb-emulator.c`,
   `scripts/test-full-chain.c`, `scripts/participant-init.sh`,
   `scripts/build-participant-rootfs.sh`
-- Release kernel/metadata/artifact: `testkernelctf/kernel/bzImage`,
-  `testkernelctf/kernel/vmlinux`, `testkernelctf/SHA256SUMS`, `testkernelctf.tar.xz`
+- Release kernel/metadata/artifact: `kernel/bzImage`,
+  `participant/testkernelctf/kernel/bzImage`,
+  `participant/testkernelctf/SHA256SUMS`, `participant/testkernelctf.tar.gz`,
+  `server/initramfs.cpio.gz`
 - Design and state: `docs/SPEC.md`, `STATUS.md`, `HANDOFF.md`, `README.md`
 
 ## Reproduction inputs and commands
@@ -150,12 +164,12 @@ HOSTLDFLAGS="-L$dep_root/root/usr/lib/x86_64-linux-gnu" \
 ./scripts/build-participant-rootfs.sh \
   /tmp/kapo-participant-input/ubuntu-base-24.04.4-base-amd64.tar.gz \
   /tmp/usb-kernel-runtime-tools/root/usr/bin/busybox \
-  "$release_build_root/initramfs.cpio.gz" "$release_build_root/kapo-helper"
+  "$release_build_root/initramfs.cpio.gz"
 
 ./scripts/build-qemu-release.sh /tmp/kapo-release-kernel-out \
-  "$release_build_root/initramfs.cpio.gz" "$release_build_root/kapo-helper" \
+  "$release_build_root/initramfs.cpio.gz" \
   "$release_build_root/package/testkernelctf" \
-  "$release_build_root/package/testkernelctf.tar.xz"
+  "$release_build_root/package/testkernelctf.tar.gz"
 ```
 
 The runtime regression used the current `scripts/test-full-chain.c` linked with
@@ -164,7 +178,7 @@ The runtime regression used the current `scripts/test-full-chain.c` linked with
 
 ```sh
 /work/test-full-chain /sys/bus/usb/devices/1-1/descriptors \
-  /dev/kapo_ctf0 /kapo-helper \
+  /dev/kapo_ctf0 /kapo \
   0xffffffff81329030 0xffffffff822285a0 0x1790
 ```
 
@@ -199,11 +213,15 @@ PASS:
   is disabled in the target config
 - a second rootfs and release build matched the tracked initramfs and archive
   byte-for-byte
-- `nm` reports no symbols for distributed `vmlinux` and helper
-- `testkernelctf/SHA256SUMS`: PASS
-- initramfs ownership/modes: root-owned flag `0400`, helper `4755`, emulator
+- `nm` reports no symbols for the embedded `/kapo` target
+- `participant/testkernelctf/SHA256SUMS`: PASS
+- initramfs ownership/modes: root-owned flag `0400`, `/kapo` `4755`, emulator
   `0700`
 - archive listing and internal-material exclusion check: PASS
+- fresh minimal rootfs/release rebuild matched the tracked initramfs and archive
+  byte-for-byte
+- renamed `/kapo` target QEMU full chain 1/1: helper-page leak, KASLR leak,
+  page-cache write, UID 0, `kapo{test_flag}`, and `FULL_CHAIN_PASS`
 
 NOT TESTED / remaining:
 

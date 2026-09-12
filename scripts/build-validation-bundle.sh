@@ -46,7 +46,7 @@ gcc -static -Wall -Wextra -Werror \
 gcc -static -no-pie -Wall -Wextra -Werror \
 	"$project_dir/helpers/kapo-helper.c" -o "$rootfs/kapo-helper"
 install -m 0755 "$project_dir/scripts/hardware-init.sh" "$rootfs/init"
-printf '%s\n' 'KAPO{test_flag}' >"$rootfs/flag"
+printf '%s\n' 'kapo{test_flag}' >"$rootfs/flag"
 chmod 0755 "$rootfs/test-full-chain"
 chmod 4755 "$rootfs/kapo-helper"
 chmod 0400 "$rootfs/flag"

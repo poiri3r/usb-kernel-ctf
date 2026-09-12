@@ -3,7 +3,7 @@
 이 문서는 이정표별 진행 상황과 검증 범위를 기록한다. 작업 재개 순서는
 `docs/SPEC.md` → 이 문서 → `HANDOFF.md`이다.
 
-최종 갱신: 2026-09-09 KST
+최종 갱신: 2026-09-12 KST
 
 ## 현재 요약
 
@@ -23,10 +23,45 @@
 | 알려진 resize shortcut | BLOCKED 3/3 | 기존 A/B/C exploit 모두 helper leak 단계 실패 |
 | partial 이전 full-entry 강화본 풀이 | PASS | 1,190초, 의도 체인, shortcut 없음, 8/10 |
 | partial-overwrite fresh AI 풀이 | NOT SOLVED 0/3 | 971초, 1,637초, 1,787초 cutoff; partial 구조 복원 3/3 |
+| private 서버 artifact | LOCAL PASS | 실제 flag image direct QEMU 1/1, 기본 경로 TCP launcher 1/1 |
 
 현재 단계는 **방향 2 RC 구현 commit `60d0e37` push 완료, release gate와 운영
 배포 미완료**다.
 RP2040 hardware edition은 방향 1로 보존하지만 현재 완료 조건은 아니다.
+
+## 2026-09-12 — QEMU-only SUID target 배포 단서 축소
+
+- 자동 배포 서버용 artifact를 `kernel/bzImage`와 `server/initramfs.cpio.gz`로
+  분리하고 launcher 기본 경로 및 systemd unit의 `/opt/kapo` 경로와 일치시켰다.
+- 참가자 배포 원본은 `participant/testkernelctf/`, 전달 archive는
+  `participant/testkernelctf.tar.gz`로 분리했다. 서버 runtime은 `participant/`를
+  참조하지 않는다.
+- participant initramfs의 SUID target 이름을 `/kapo-helper`에서 `/kapo`로 변경했다.
+- participant archive의 별도 `helper/kapo-helper` 분석 사본과 `helper/` directory를
+  제거했다. 동일 바이너리는 initramfs 안의 root-owned mode `4755` `/kapo`로 유지한다.
+- rootfs/release builder에서 별도 helper output과 package input을 제거했다.
+- participant 배포 kernel은 `bzImage`만 남기고 별도 `vmlinux`와 kernel config를
+  제거했다. archive의 `work/`와 `.gitkeep`도 제거하고 README는 최소 한국어 안내로
+  교체했다.
+- initramfs 목록, `/kapo` mode `4755`, `/flag` mode `0400`, 배포 `SHA256SUMS`, archive
+  목록과 내부 자료 제외를 검증했다: PASS.
+- 기록된 입력으로 rootfs와 최소 archive를 새로 빌드해 tracked artifact와
+  byte-for-byte 일치를 확인했다: PASS.
+- 이름 변경 및 소문자 test flag 반영 뒤 participant QEMU의 `/kapo` 대상 full exploit
+  chain은 1/1 PASS. UID 65534에서 UID 0, `kapo{test_flag}`와 `FULL_CHAIN_PASS`를
+  확인했다.
+- 공개 flag 형식을 `kapo{...}`로 변경하고 participant initramfs에는
+  `kapo{test_flag}`를 넣었다.
+- private Git용 `server/initramfs.cpio.gz`에는 실제 flag를 넣었으며 raw flag 파일은
+  저장소에 남기지 않았다. SHA-256은
+  `ad693fe14aab27b41e463a05afd09b8cbef339ba5ee0cf35cac7231cb5938c88`이다.
+- 새 최소 `participant/testkernelctf.tar.gz` SHA-256은
+  `1e4bb114135ecf768b500055231bebc74da1cc0a3d54f88cf00e266e3d9ea4a6`이다.
+- private server image를 `kernel/bzImage`와 직접 실행한 full chain은 1/1 PASS이며
+  실제 flag 획득과 `FULL_CHAIN_PASS`를 확인했다.
+- repository-relative 기본 `kernel/`·`server/` 경로로 TCP launcher를 실행하고 ELF
+  upload부터 UID 0 및 `FULL_CHAIN_PASS`까지 확인했다: PASS 1/1.
+- 실제 운영 host의 merge hook, systemd restart, KVM과 외부 TCP 연결은 NOT TESTED.
 
 ## 2026-09-09 — Jeopardy 공개 포트 통일
 
@@ -282,7 +317,7 @@ single-enumeration dual configuration과 physical RP2040 검증은 방향 1의 �
 - 고정 identity의 Linux 6.8.12 kernel rebuild
 - 동일 입력 initramfs 2회 byte-for-byte 일치
 - 배포 `vmlinux`와 helper의 symbol table 제거 확인 (`nm`: no symbols)
-- `testkernelctf/SHA256SUMS` 전체 검증
+- `participant/testkernelctf/SHA256SUMS` 전체 검증
 - archive listing에서 organizer exploit/harness, 내부 문서, RP2040 파일 제외 확인
 - 기존 target-equivalent QEMU full chain 10/10
 - current Linux 6.8.12 `bzImage` rebuild
@@ -313,7 +348,9 @@ single-enumeration dual configuration과 physical RP2040 검증은 방향 1의 �
 - 방향 2 partial RC 구현·검증 commit은 `60d0e37`이며 `origin/main`으로 push했다.
 - 생성된 `dist/`와 `firmware/build/`은 `.gitignore` 대상이다.
 - `participant-release/`는 방향 1 pre-release로 보존한다.
-- `testkernelctf/`와 `testkernelctf.tar.xz`가 방향 2 배포 후보 산출물이다.
+- `participant/testkernelctf/`와 `participant/testkernelctf.tar.gz`가 방향 2 배포 후보
+  산출물이며, `kernel/bzImage`와 `server/initramfs.cpio.gz`가 private server runtime
+  artifact다.
 
 ## 실측 난이도 평가
 
@@ -322,7 +359,8 @@ single-enumeration dual configuration과 physical RP2040 검증은 방향 1의 �
 - 사람 중심 판정: **상**. Stage 1 USB core leak과 Stage 2 custom driver overflow를 연결하고,
   KASLR 및 vmemmap 계산, pipe heap grooming, page-cache overwrite까지 참가자 exploit이
   직접 구현해야 한다.
-- 배포 `vmlinux`와 helper는 stripped 상태이고 `System.map`이 없어 정적 분석 부담이 있다.
+- 배포본은 `bzImage`만 제공하고 `vmlinux`, standalone kernel config와 `System.map`을
+  제외해 참가자가 필요한 분석 artifact를 직접 추출해야 한다.
 - emulator contract와 세 단계 readiness 순서는 공개되므로 USB transport 구현 부담은
   줄지만 kernel heap exploit 난이도는 유지된다.
 - 현재 partial 버전의 실측 성공 시간은 확정할 수 없다. 3개 모두 cutoff라

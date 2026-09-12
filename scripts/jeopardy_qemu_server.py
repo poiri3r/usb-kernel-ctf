@@ -209,9 +209,9 @@ def parse_args():
     parser.add_argument("--bind", default="127.0.0.1")
     parser.add_argument("--port", type=int, default=13001)
     parser.add_argument("--kernel", type=Path,
-                        default=project / "testkernelctf/kernel/bzImage")
+                        default=project / "kernel/bzImage")
     parser.add_argument("--initrd", type=Path,
-                        default=project / "testkernelctf/rootfs/initramfs.cpio.gz")
+                        default=project / "server/initramfs.cpio.gz")
     parser.add_argument("--qemu", default="qemu-system-x86_64")
     parser.add_argument("--accel", choices=("auto", "kvm", "tcg"), default="auto")
     parser.add_argument("--max-sessions", type=int, default=2)

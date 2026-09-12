@@ -2,16 +2,15 @@
 
 set -eu
 
-if [ "$#" -lt 4 ] || [ "$#" -gt 5 ]; then
-	echo "usage: $0 <ubuntu-base.tar.gz> <static-busybox> <initramfs-output> <helper-output> [flag-file]" >&2
+if [ "$#" -lt 3 ] || [ "$#" -gt 4 ]; then
+	echo "usage: $0 <ubuntu-base.tar.gz> <static-busybox> <initramfs-output> [flag-file]" >&2
 	exit 1
 fi
 
 ubuntu_base=$1
 busybox=$2
 initramfs_output=$3
-helper_output=$4
-flag_file=${5:-}
+flag_file=${4:-}
 project_dir=$(CDPATH= cd -- "$(dirname "$0")/.." && pwd)
 rootfs=
 archive=
@@ -41,10 +40,10 @@ if [ -n "$flag_file" ]; then
 		echo "missing required file: $flag_file" >&2
 		exit 1
 	}
-	flag_pattern='^KAPO\{[^{}[:space:]]+\}$'
+	flag_pattern='^kapo\{[^{}[:space:]]+\}$'
 	[ "$(LC_ALL=C grep -Ec "$flag_pattern" "$flag_file")" -eq 1 ] &&
 		! LC_ALL=C grep -Evq "$flag_pattern" "$flag_file" || {
-		echo "flag file must contain exactly one KAPO{...} line" >&2
+		echo "flag file must contain exactly one kapo{...} line" >&2
 		exit 1
 	}
 fi
@@ -52,11 +51,6 @@ fi
 	echo "$initramfs_output already exists" >&2
 	exit 1
 }
-[ ! -e "$helper_output" ] || {
-	echo "$helper_output already exists" >&2
-	exit 1
-}
-
 tar -xzf "$ubuntu_base" -C "$rootfs" --no-same-owner
 mkdir -p "$rootfs/dev" "$rootfs/proc" "$rootfs/sys" "$rootfs/tmp" \
 	"$rootfs/work"
@@ -64,19 +58,18 @@ chmod 0755 "$rootfs"
 install -m 0755 "$busybox" "$rootfs/bin/busybox"
 install -m 0755 "$project_dir/scripts/participant-init.sh" "$rootfs/init"
 gcc -static -no-pie -Wall -Wextra -Werror \
-	"$project_dir/helpers/kapo-helper.c" -o "$rootfs/kapo-helper"
+	"$project_dir/helpers/kapo-helper.c" -o "$rootfs/kapo"
 gcc -static -Wall -Wextra -Werror -pthread \
 	"$project_dir/scripts/trusted-usb-emulator.c" \
 	-o "$rootfs/usr/sbin/kapo-usb-emulator"
-strip --strip-all "$rootfs/usr/sbin/kapo-usb-emulator" "$rootfs/kapo-helper"
+strip --strip-all "$rootfs/usr/sbin/kapo-usb-emulator" "$rootfs/kapo"
 chmod 0700 "$rootfs/usr/sbin/kapo-usb-emulator"
-install -m 0755 "$rootfs/kapo-helper" "$helper_output"
 if [ -n "$flag_file" ]; then
 	install -m 0400 "$flag_file" "$rootfs/flag"
 else
-	printf '%s\n' 'KAPO{test_flag}' >"$rootfs/flag"
+	printf '%s\n' 'kapo{test_flag}' >"$rootfs/flag"
 fi
-chmod 4755 "$rootfs/kapo-helper"
+chmod 4755 "$rootfs/kapo"
 chmod 0400 "$rootfs/flag"
 chmod 1777 "$rootfs/tmp" "$rootfs/work"
 find "$rootfs" -xdev -exec touch -h -d "@$source_date_epoch" {} +

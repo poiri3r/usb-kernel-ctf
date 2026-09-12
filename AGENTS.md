@@ -50,7 +50,8 @@ USB 처리 경로와 CTF용 custom driver를 연결해 재현 가능한 커널 C
 - USB core의 의도적 변경은 현재 `usb/core/config.c`를 대상으로 한다.
 - CTF용 custom driver는 현재 `usb/class/customdriver.c`를 대상으로 한다.
 - 경로나 구조를 변경해야 하면 먼저 `docs/SPEC.md`와 현재 구현의 차이를 보고한다.
-- 빌드 산출물, VM 이미지, 실제 flag, 토큰, 키와 자격 증명을 Git에 추가하지 않는다.
+- 참가자 archive와 private 저장소의 `server/initramfs.cpio.gz`는 Git에 둘 수 있다.
+  원문 flag 파일, 그 밖의 빌드 산출물, 토큰, 키와 자격 증명은 Git에 추가하지 않는다.
 
 ## Shared progress protocol
 
@@ -183,8 +184,9 @@ git config --local kapo.syncWorkTree "C:/path/to/usb-kernel-ctf"
 
 - 작업 범위는 이 CTF 저장소와 명시적으로 허가된 로컬/VM 환경으로 제한한다.
 - 실제 제3자 시스템이나 허가되지 않은 장치를 대상으로 테스트하지 않는다.
-- 저장소와 문서에는 실제 운영 flag를 기록하지 않는다.
-- 예시 값은 `KAPO{test_flag}`처럼 명백한 테스트 값만 사용한다.
+- 문서와 원문 파일에는 실제 운영 flag를 기록하지 않는다. 실제 flag는 private
+  저장소의 `server/initramfs.cpio.gz` 내부에만 둘 수 있다.
+- 예시 값은 `kapo{test_flag}`처럼 명백한 테스트 값만 사용한다.
 - `docs/SPEC.md`, 공식 solve, exploit과 내부 검증 자료는 참가자 배포본에 포함하지 않는다.
 
 ## Completion report

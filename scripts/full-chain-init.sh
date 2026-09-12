@@ -70,7 +70,7 @@ result=$?
 kill "$stage2_pid" 2>/dev/null
 wait "$stage2_pid" 2>/dev/null
 cat /tmp/full-chain.log
-if [ "$result" -eq 0 ] && grep -Fqx 'KAPO{test_flag}' /tmp/full-chain.log; then
+if [ "$result" -eq 0 ] && grep -Fqx 'kapo{test_flag}' /tmp/full-chain.log; then
 	echo FULL_CHAIN_INIT_PASS
 else
 	echo FULL_CHAIN_INIT_FAIL result="$result"

@@ -4,13 +4,25 @@ RP2040 Zero 또는 trusted Raw Gadget emulator가 제공하는 USB 입력으로 
 USB core의 Stage 1 heap disclosure와 CTF용 custom driver의 Stage 2 heap overflow를
 연결하는 커널 CTF 프로젝트다.
 
+## 배포 구조
+
+- `kernel/bzImage`: 자동 배포 서버와 참가자 배포본이 공통으로 사용하는 커널
+- `server/initramfs.cpio.gz`: private 서버 전용 실제 flag image
+- `participant/testkernelctf/`: 문제 수정 시 다시 패키징할 참가자 배포 원본
+- `participant/testkernelctf.tar.gz`: 참가자에게 전달할 단일 archive
+
+서버 배포 checkout의 root가 `/opt/kapo`일 때
+`deploy/kapo-jeopardy.service`가 위 `kernel/`과 `server/` artifact를 직접 사용한다.
+`participant/`는 서버 실행 입력이 아니다.
+
 ## 현재 상태
 
 - 현재 우선 개발 방향: QEMU-only software edition
 - 후속 보존 방향: RP2040 hardware edition
-- QEMU-only `testkernelctf/`와 `testkernelctf.tar.xz`: DIRECTION 2 RC
+- QEMU-only `participant/testkernelctf/`와 `participant/testkernelctf.tar.gz`: DIRECTION 2 RC
 - 구현·artifact·로컬 검증·독립 검토 commit `60d0e37` push: COMPLETE
-- 운영 서버의 실제 flag image/systemd/KVM 검증: NOT DEPLOYED
+- 운영 서버의 실제 flag image 로컬 QEMU/TCP 검증: PASS
+- 운영 서버의 실제 systemd/KVM 배포 검증: NOT DEPLOYED
 - 현재 재현성 재빌드 artifact cold boot full chain 및 test flag: TCG PASS 5/5
 - 동일한 restricted e1000 배치의 로컬/Jeopardy QEMU full chain: local PASS,
   TCP fresh boot PASS 5/5
@@ -20,7 +32,7 @@ USB core의 Stage 1 heap disclosure와 CTF용 custom driver의 Stage 2 heap over
 - root-only guest emulator와 16-byte Stage 2 partial overwrite: TCG PASS 5/5
 - partial-overwrite fresh AI black-box 풀이: 30분 내 0/3, partial 구조 복원 3/3
 - Target-equivalent Linux 6.8.12 QEMU full chain: PASS 10/10
-- 비특권 UID 65534에서 UID 0 및 `KAPO{test_flag}` 획득: PASS 10/10
+- 비특권 UID 65534에서 UID 0 및 `kapo{test_flag}` 획득: PASS 10/10
 - 현재 kernel source rebuild 및 hardware initramfs boot smoke: PASS
 - RP2040 firmware ARM build 및 host protocol self-test: PASS
 - 로컬 hardware-validation bundle과 `SHA256SUMS`: BUILT
@@ -29,7 +41,7 @@ USB core의 Stage 1 heap disclosure와 CTF용 custom driver의 Stage 2 heap over
 
 방향 2 배포 후보는 organizer-owned trusted USB emulator daemon을 QEMU guest에서 root로
 시작하되 disconnected 상태로 대기시킨다. 참가자가 UID 65534 guest exploit으로 모든
-heap grooming과 trigger를 수행한다. 현재 재현성 재빌드 후보에서 `KAPO{test_flag}` 획득을
+heap grooming과 trigger를 수행한다. 현재 재현성 재빌드 후보에서 `kapo{test_flag}` 획득을
 TCG cold boot 5/5로 확인했다. 이전 힌트 축소 archive를 푼 독립 AI 세션 3/3이 사용한
 helper-stage pipe resize 우회는 강화 kernel에서 차단했으며, partial 이전 full-entry
 강화 archive의 신규 독립
@@ -50,7 +62,7 @@ test initramfs와 `kapo-rp2040.uf2`를 생성했다. 이 디렉터리는 Git에 
 검증 산출물이며 방향 1용으로 보존한다.
 
 `participant-release/`는 방향 1 RP2040 pre-release로 보존한다. 방향 2 참가자에게는
-`testkernelctf.tar.xz`만 전달한다.
+`participant/testkernelctf.tar.gz`만 전달한다.
 
 ## 문서
 
@@ -62,5 +74,6 @@ test initramfs와 `kapo-rp2040.uf2`를 생성했다. 이 디렉터리는 Git에 
 - `HANDOFF.md`: 현재 작업 트리, 검증 한계와 바로 다음 작업
 - `AGENTS.md`: 저장소 작업 규칙과 세션 절차
 
-실제 flag와 내부 검증 exploit은 저장소에 추가하지 않는다. 방향 2 배포본에는
-`KAPO{test_flag}`만 포함한다.
+실제 flag 원문과 내부 검증 exploit은 저장소에 추가하지 않는다. 실제 flag는 private
+저장소의 `server/initramfs.cpio.gz`에만 두며 방향 2 참가자 배포본에는
+`kapo{test_flag}`만 포함한다.
